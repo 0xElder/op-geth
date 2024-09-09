@@ -62,6 +62,9 @@ type Config struct {
 
 	RollupComputePendingBlock bool   // Compute the pending block from tx-pool, instead of copying the latest-block
 	EffectiveGasCeil          uint64 // if non-zero, a gas ceiling to apply independent of the header's gaslimit value
+
+	ElderSequencerEnabled bool   `json:"elder_sequencer_enabled"`
+	ElderSeqURL           string `json:"elder_seq_url"`
 }
 
 // DefaultConfig contains default settings for miner.
@@ -73,8 +76,9 @@ var DefaultConfig = Config{
 	// consensus-layer usually will wait a half slot of time(6s)
 	// for payload generation. It should be enough for Geth to
 	// run 3 rounds.
-	Recommit:          2 * time.Second,
-	NewPayloadTimeout: 2 * time.Second,
+	Recommit:              2 * time.Second,
+	NewPayloadTimeout:     2 * time.Second,
+	ElderSequencerEnabled: true,
 }
 
 // Miner creates blocks and searches for proof-of-work values.

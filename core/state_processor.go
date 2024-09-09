@@ -111,7 +111,7 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 	evm.Reset(txContext, statedb)
 
 	nonce := tx.Nonce()
-	if msg.IsDepositTx && config.IsOptimismRegolith(evm.Context.Time) {
+	if (msg.IsDepositTx && config.IsOptimismRegolith(evm.Context.Time)) || msg.IsElderInnerTx {
 		nonce = statedb.GetNonce(msg.From)
 	}
 

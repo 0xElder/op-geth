@@ -129,6 +129,8 @@ var (
 		utils.MinerExtraDataFlag,
 		utils.MinerRecommitIntervalFlag,
 		utils.MinerNewPayloadTimeout,
+		utils.ElderSequencerEnabledFlag,
+		utils.ElderSeqURLFlag,
 		utils.NATFlag,
 		utils.NoDiscoverFlag,
 		utils.DiscoveryV4Flag,

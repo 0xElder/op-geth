@@ -80,6 +80,9 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 	if tx.Type() == types.DepositTxType {
 		return core.ErrTxTypeNotSupported
 	}
+	if tx.Type() == types.ElderInnerTxType {
+		return core.ErrTxTypeNotSupported
+	}
 	if opts.Config.IsOptimism() && tx.Type() == types.BlobTxType {
 		return core.ErrTxTypeNotSupported
 	}

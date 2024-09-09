@@ -1458,6 +1458,9 @@ type RPCTransaction struct {
 	IsSystemTx *bool        `json:"isSystemTx,omitempty"`
 	// deposit-tx post-Canyon only
 	DepositReceiptVersion *hexutil.Uint64 `json:"depositReceiptVersion,omitempty"`
+
+	// Elder
+	ElderOuterTx hexutil.Bytes `json:"elderOuterTx,omitempty"`
 }
 
 // newRPCTransaction returns a transaction that will serialize to the RPC
@@ -1503,6 +1506,12 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 				*result.DepositReceiptVersion = hexutil.Uint64(*receipt.DepositReceiptVersion)
 			}
 		}
+	case types.ElderInnerTxType:
+		result.ElderOuterTx = tx.ElderOuterTx()
+		al := tx.AccessList()
+		result.Accesses = &al
+		result.ChainID = (*hexutil.Big)(tx.ChainId())
+
 	case types.LegacyTxType:
 		if v.Sign() == 0 && r.Sign() == 0 && s.Sign() == 0 { // pre-bedrock relayed tx does not have a signature
 			result.ChainID = (*hexutil.Big)(new(big.Int).Set(config.ChainID))
@@ -1930,6 +1939,10 @@ func marshalReceipt(receipt *types.Receipt, blockHash common.Hash, blockNumber u
 		if receipt.DepositReceiptVersion != nil {
 			fields["depositReceiptVersion"] = hexutil.Uint64(*receipt.DepositReceiptVersion)
 		}
+	}
+
+	if chainConfig.Optimism != nil && tx.IsElderInnerTx() {
+		fields["elderOuterTx"] = hexutil.Bytes(receipt.ElderOuterTx)
 	}
 
 	// Assign receipt status or post state.

@@ -18,10 +18,14 @@ package types
 
 import (
 	"crypto/ecdsa"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 
+	"cosmossdk.io/api/cosmos/crypto/secp256k1"
+	elderTx "github.com/cosmos/cosmos-sdk/types/tx"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -255,6 +259,82 @@ func NewLondonSigner(chainId *big.Int) Signer {
 	return londonSigner{eip2930Signer{NewEIP155Signer(chainId)}}
 }
 
+func bytesToCosmosTx(rawTxBytes []byte) (*elderTx.Tx, error) {
+	var tx elderTx.Tx
+
+	err := tx.Unmarshal(rawTxBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tx, nil
+}
+
+func CosmosPubKeyToEthPubkey(pubKey string) (string, error) {
+	// Decode the public key from hex
+	pubKeyBytes, err := hex.DecodeString(pubKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode hex string: %v", err)
+	}
+
+	// Generate the public key object
+	publicKey, err := crypto.DecompressPubkey(pubKeyBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to decompress public key: %v", err)
+	}
+
+	return hex.EncodeToString(crypto.FromECDSAPub(publicKey)), nil
+}
+
+func EthPubKeyToEthAddr(pubKey string) (string, error) {
+	// Decode the public key from hex
+	pubKeyBytes, err := hex.DecodeString(pubKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode hex string: %v", err)
+	}
+
+	// Generate the public key object
+	publicKey, err := crypto.UnmarshalPubkey(pubKeyBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate public key: %v", err)
+	}
+
+	// Generate the address
+	address := crypto.PubkeyToAddress(*publicKey)
+	return address.Hex(), nil
+}
+
+func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
+	elderInnerTx := tx.inner.(*ElderInnerTx)
+	elderOuterTx, err := bytesToCosmosTx(elderInnerTx.ElderOuterTx)
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	signerCosmos := elderOuterTx.GetAuthInfo()
+	fmt.Printf("\nSigner: %v\n", signerCosmos.SignerInfos[0].PublicKey)
+
+	cosmosPubKey := &secp256k1.PubKey{}
+	err = proto.Unmarshal(signerCosmos.SignerInfos[0].PublicKey.Value, cosmosPubKey)
+	if err != nil {
+		panic(err)
+	}
+
+	cosmosPubKeyStr := hex.EncodeToString(cosmosPubKey.Key)
+
+	ethPubKey, err := CosmosPubKeyToEthPubkey(cosmosPubKeyStr)
+	if err != nil {
+		panic(err)
+	}
+
+	ethAddr, err := EthPubKeyToEthAddr(ethPubKey)
+	if err != nil {
+		panic(err)
+	}
+
+	return common.HexToAddress(ethAddr), nil
+}
+
 func (s londonSigner) Sender(tx *Transaction) (common.Address, error) {
 	if tx.Type() == DepositTxType {
 		switch tx.inner.(type) {
@@ -264,6 +344,14 @@ func (s londonSigner) Sender(tx *Transaction) (common.Address, error) {
 			return tx.inner.(*depositTxWithNonce).From, nil
 		}
 	}
+	if tx.Type() == ElderInnerTxType {
+		aa, err := ElderInnerTxSender(tx)
+		if err != nil {
+			return common.Address{}, err
+		}
+		return aa, nil
+	}
+
 	if tx.Type() != DynamicFeeTxType {
 		return s.eip2930Signer.Sender(tx)
 	}
@@ -286,6 +374,9 @@ func (s londonSigner) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big
 	if tx.Type() == DepositTxType {
 		return nil, nil, nil, fmt.Errorf("deposits do not have a signature")
 	}
+	if tx.Type() == ElderInnerTxType {
+		return nil, nil, nil, fmt.Errorf("elder inner transactions do not have a signature")
+	}
 	txdata, ok := tx.inner.(*DynamicFeeTx)
 	if !ok {
 		return s.eip2930Signer.SignatureValues(tx, sig)
@@ -305,6 +396,9 @@ func (s londonSigner) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big
 func (s londonSigner) Hash(tx *Transaction) common.Hash {
 	if tx.Type() == DepositTxType {
 		panic("deposits cannot be signed and do not have a signing hash")
+	}
+	if tx.Type() == ElderInnerTxType {
+		panic("elder inner transactions cannot be signed and do not have a signing hash")
 	}
 	if tx.Type() != DynamicFeeTxType {
 		return s.eip2930Signer.Hash(tx)

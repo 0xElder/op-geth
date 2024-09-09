@@ -63,6 +63,9 @@ type txJSON struct {
 
 	// Only used for encoding:
 	Hash common.Hash `json:"hash"`
+
+	// Elder transaction fields
+	ElderOuterTx []byte `json:"elderOuterTx,omitempty"`
 }
 
 // yParityValue returns the YParity value from JSON. For backwards-compatibility reasons,
@@ -138,6 +141,15 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 		enc.S = (*hexutil.Big)(itx.S)
 		yparity := itx.V.Uint64()
 		enc.YParity = (*hexutil.Uint64)(&yparity)
+
+	case *ElderInnerTx:
+		enc.ChainID = (*hexutil.Big)(itx.ChainID)
+		enc.To = tx.To()
+		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
+		enc.Value = (*hexutil.Big)(itx.Value)
+		enc.Input = (*hexutil.Bytes)(&itx.Data)
+		enc.AccessList = &itx.AccessList
+		enc.ElderOuterTx = itx.ElderOuterTx
 
 	case *BlobTx:
 		enc.ChainID = (*hexutil.Big)(itx.ChainID.ToBig())
@@ -350,6 +362,33 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 				return err
 			}
 		}
+
+	case ElderInnerTxType:
+		var itx ElderInnerTx
+		inner = &itx
+		if dec.ChainID == nil {
+			return errors.New("missing required field 'chainId' in transaction")
+		}
+		itx.ChainID = (*big.Int)(dec.ChainID)
+		if dec.To != nil {
+			itx.To = dec.To
+		}
+		if dec.Gas == nil {
+			return errors.New("missing required field 'gas' for txdata")
+		}
+		itx.Gas = uint64(*dec.Gas)
+		itx.Value = (*big.Int)(dec.Value)
+		if dec.Input == nil {
+			return errors.New("missing required field 'input' in transaction")
+		}
+		itx.Data = *dec.Input
+		if dec.AccessList != nil {
+			itx.AccessList = *dec.AccessList
+		}
+		if dec.ElderOuterTx == nil {
+			return errors.New("missing required field 'elderOuterTx' in transaction")
+		}
+		itx.ElderOuterTx = dec.ElderOuterTx
 
 	case BlobTxType:
 		var itx BlobTx

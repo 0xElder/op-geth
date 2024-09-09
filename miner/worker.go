@@ -18,9 +18,13 @@ package miner
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,6 +45,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
+
+	routerTypes "github.com/0xElder/elder/x/router/types"
+	elderTx "github.com/cosmos/cosmos-sdk/types/tx"
+	"github.com/cosmos/gogoproto/proto"
 )
 
 const (
@@ -245,32 +253,42 @@ type worker struct {
 	skipSealHook func(*task) bool                   // Method to decide whether skipping the sealing.
 	fullTaskHook func()                             // Method to call before pushing the full sealing task.
 	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
+
+	elderSequencerEnabled bool
+	elderSeqURL           string
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(header *types.Header) bool, init bool) *worker {
 	worker := &worker{
-		config:             config,
-		chainConfig:        chainConfig,
-		engine:             engine,
-		eth:                eth,
-		chain:              eth.BlockChain(),
-		mux:                mux,
-		isLocalBlock:       isLocalBlock,
-		coinbase:           config.Etherbase,
-		extra:              config.ExtraData,
-		tip:                uint256.MustFromBig(config.GasPrice),
-		pendingTasks:       make(map[common.Hash]*task),
-		txsCh:              make(chan core.NewTxsEvent, txChanSize),
-		chainHeadCh:        make(chan core.ChainHeadEvent, chainHeadChanSize),
-		newWorkCh:          make(chan *newWorkReq),
-		getWorkCh:          make(chan *getWorkReq),
-		taskCh:             make(chan *task),
-		resultCh:           make(chan *types.Block, resultQueueSize),
-		startCh:            make(chan struct{}, 1),
-		exitCh:             make(chan struct{}),
-		resubmitIntervalCh: make(chan time.Duration),
-		resubmitAdjustCh:   make(chan *intervalAdjust, resubmitAdjustChanSize),
+		config:                config,
+		chainConfig:           chainConfig,
+		engine:                engine,
+		eth:                   eth,
+		chain:                 eth.BlockChain(),
+		mux:                   mux,
+		isLocalBlock:          isLocalBlock,
+		coinbase:              config.Etherbase,
+		extra:                 config.ExtraData,
+		tip:                   uint256.MustFromBig(config.GasPrice),
+		pendingTasks:          make(map[common.Hash]*task),
+		txsCh:                 make(chan core.NewTxsEvent, txChanSize),
+		chainHeadCh:           make(chan core.ChainHeadEvent, chainHeadChanSize),
+		newWorkCh:             make(chan *newWorkReq),
+		getWorkCh:             make(chan *getWorkReq),
+		taskCh:                make(chan *task),
+		resultCh:              make(chan *types.Block, resultQueueSize),
+		startCh:               make(chan struct{}, 1),
+		exitCh:                make(chan struct{}),
+		resubmitIntervalCh:    make(chan time.Duration),
+		resubmitAdjustCh:      make(chan *intervalAdjust, resubmitAdjustChanSize),
+		elderSequencerEnabled: config.ElderSequencerEnabled,
+		elderSeqURL:           config.ElderSeqURL,
 	}
+
+	if worker.config.ElderSequencerEnabled && worker.elderSeqURL == "" {
+		log.Crit("Elder sequencer enabled but no URL specified")
+	}
+
 	// Subscribe for transaction insertion events (whether from network or resurrects)
 	worker.txsSub = eth.TxPool().SubscribeTransactions(worker.txsCh, true)
 	// Subscribe events for blockchain
@@ -568,7 +586,7 @@ func (w *worker) mainLoop() {
 			req.result <- w.generateWork(req.params)
 
 		case ev := <-w.txsCh:
-			if w.chainConfig.Optimism != nil && !w.config.RollupComputePendingBlock {
+			if (w.chainConfig.Optimism != nil && !w.config.RollupComputePendingBlock) || w.elderSequencerEnabled {
 				continue // don't update the pending-block snapshot if we are not computing the pending block
 			}
 			// Apply transactions to the pending state if we're not sealing
@@ -846,6 +864,56 @@ func (w *worker) applyTransaction(env *environment, tx *types.Transaction) (*typ
 	return receipt, err
 }
 
+func (w *worker) commitElderTransactions(env *environment, elderInnerTxs []*types.Transaction, interrupt *atomic.Int32) error {
+	gasLimit := env.header.GasLimit
+	if env.gasPool == nil {
+		env.gasPool = new(core.GasPool).AddGas(gasLimit)
+	}
+	var coalescedLogs []*types.Log
+
+	fmt.Printf("############135 commitElderTransactions: %d transactions\n", len(elderInnerTxs))
+	for _, tx := range elderInnerTxs {
+		fmt.Println("############136 commitElderTransactions: tx", tx.Hash().Hex())
+		// Check interruption signal and abort building if it's fired.
+		if interrupt != nil {
+			if signal := interrupt.Load(); signal != commitInterruptNone {
+				return signalToErr(signal)
+			}
+		}
+		fmt.Println("############137 commitElderTransactions: tx", tx.Hash().Hex())
+		// Start executing the transaction
+		env.state.SetTxContext(tx.Hash(), env.tcount)
+
+		fmt.Println("############138 commitElderTransactions: tx", tx.Hash().Hex())
+		logs, err := w.commitTransaction(env, tx)
+		switch {
+		case errors.Is(err, nil):
+			// Everything ok, collect the logs and shift in the next transaction from the same account
+			coalescedLogs = append(coalescedLogs, logs...)
+			env.tcount++
+		default:
+			log.Crit("Unexpected error during elder transaction execution", "err", err)
+		}
+		fmt.Println("############139 commitElderTransactions: tx", tx.Hash().Hex())
+	}
+	if !w.isRunning() && len(coalescedLogs) > 0 {
+		// We don't push the pendingLogsEvent while we are sealing. The reason is that
+		// when we are sealing, the worker will regenerate a sealing block every 3 seconds.
+		// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
+
+		// make a copy, the state caches the logs and these logs get "upgraded" from pending to mined
+		// logs by filling in the block hash when the block was mined by the local miner. This can
+		// cause a race condition if a log was "upgraded" before the PendingLogsEvent is processed.
+		cpy := make([]*types.Log, len(coalescedLogs))
+		for i, l := range coalescedLogs {
+			cpy[i] = new(types.Log)
+			*cpy[i] = *l
+		}
+		w.pendingLogsFeed.Send(cpy)
+	}
+	return nil
+}
+
 func (w *worker) commitTransactions(env *environment, plainTxs, blobTxs *transactionsByPriceAndNonce, interrupt *atomic.Int32) error {
 	gasLimit := env.header.GasLimit
 	if env.gasPool == nil {
@@ -1103,10 +1171,142 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	return env, nil
 }
 
+type ElderGetTxByBlockResponse struct {
+	RollID string `json:"rollId"`
+	Txs    struct {
+		Block string   `json:"block"`
+		Txs   []string `json:"txs"`
+	} `json:"txs"`
+}
+
+// Query the elder sequencer for the latest block
+// if the elder sequencer is not available, the query will fail
+func (w *worker) queryFromElder() (ElderGetTxByBlockResponse, error) {
+	elderResp := &ElderGetTxByBlockResponse{}
+
+	url := w.elderSeqURL
+	if url == "" {
+		return ElderGetTxByBlockResponse{}, errors.New("elder seq url not set")
+	}
+
+	response, err := http.Get(url)
+	if err != nil {
+		return ElderGetTxByBlockResponse{}, err
+	}
+
+	responseData, err := io.ReadAll(response.Body)
+	if err != nil {
+		return ElderGetTxByBlockResponse{}, err
+	}
+
+	json.Unmarshal(responseData, &elderResp)
+
+	return *elderResp, nil
+}
+
+func txsStringToTxs(txs []string) ([]*types.Transaction, error) {
+	elderInnerTxs := make([]*types.Transaction, len(txs))
+	for i, tx := range txs {
+		txBytes, err := base64toBytes(tx)
+		if err != nil {
+			return []*types.Transaction{}, err
+		}
+
+		elderInnerTx, err := elderTxToEthTx(txBytes)
+		if err != nil {
+			return []*types.Transaction{}, err
+		}
+
+		elderInnerTxs[i] = elderInnerTx
+	}
+	return elderInnerTxs, nil
+}
+
+func base64toBytes(in string) ([]byte, error) {
+	out, err := base64.StdEncoding.DecodeString(in)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return out, nil
+}
+
+func bytesToCosmosTx(rawTxBytes []byte) (*elderTx.Tx, error) {
+	var tx elderTx.Tx
+
+	err := tx.Unmarshal(rawTxBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tx, nil
+}
+
+func elderTxToEthTx(rawElderTxBytes []byte) (*types.Transaction, error) {
+	elderTx, err := bytesToCosmosTx(rawElderTxBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transaction1 %+v: %v", rawElderTxBytes, err)
+	}
+
+	cosmMessage := &routerTypes.MsgSubmitRollTx{}
+	err = proto.Unmarshal(elderTx.Body.Messages[0].Value, cosmMessage)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transaction3 %+v: %v", elderTx, err)
+	}
+
+	var tx types.Transaction
+	if err := tx.UnmarshalBinary(cosmMessage.TxData); err != nil {
+		return nil, fmt.Errorf("invalid transaction4 %+v: %v", elderTx, err)
+	}
+
+	elderInnerTx, err := legacyTxToElderInnerTx(&tx, rawElderTxBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transaction5 %+v: %v", elderTx, err)
+	}
+
+	return elderInnerTx, nil
+}
+
+func legacyTxToElderInnerTx(tx *types.Transaction, rawElderTxBytes []byte) (*types.Transaction, error) {
+	inner := types.NewTx(&types.ElderInnerTx{
+		ChainID:      tx.ChainId(),
+		Gas:          tx.Gas(),
+		To:           tx.To(),
+		Value:        tx.Value(),
+		Data:         tx.Data(),
+		AccessList:   tx.AccessList(),
+		ElderOuterTx: rawElderTxBytes,
+	})
+
+	return inner, nil
+}
+
 // fillTransactions retrieves the pending transactions from the txpool and fills them
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
+	if w.elderSequencerEnabled {
+		resp, err := w.queryFromElder()
+		if err != nil {
+			log.Crit("Failed to query elder sequencer", "err", err)
+			return err
+		}
+
+		txs, err := txsStringToTxs(resp.Txs.Txs)
+		if err != nil {
+			log.Crit("Failed to convert txs to bytes", "err", err)
+			return err
+		}
+
+		fmt.Printf("\n######## fillTransactions txs : %+v \n", len(txs))
+
+		if err := w.commitElderTransactions(env, txs, interrupt); err != nil {
+			log.Crit("Failed to commit elder transactions", "err", err)
+			return err
+		}
+		return nil
+	}
+
 	w.mu.RLock()
 	tip := w.tip
 	w.mu.RUnlock()
@@ -1146,6 +1346,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 		plainTxs := newTransactionsByPriceAndNonce(env.signer, localPlainTxs, env.header.BaseFee)
 		blobTxs := newTransactionsByPriceAndNonce(env.signer, localBlobTxs, env.header.BaseFee)
 
+		fmt.Println("######## fillTransactions localPlainTxs", len(localPlainTxs))
 		if err := w.commitTransactions(env, plainTxs, blobTxs, interrupt); err != nil {
 			return err
 		}
@@ -1154,6 +1355,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 		plainTxs := newTransactionsByPriceAndNonce(env.signer, remotePlainTxs, env.header.BaseFee)
 		blobTxs := newTransactionsByPriceAndNonce(env.signer, remoteBlobTxs, env.header.BaseFee)
 
+		fmt.Println("######## fillTransactions remotePlainTxs", len(localPlainTxs))
 		if err := w.commitTransactions(env, plainTxs, blobTxs, interrupt); err != nil {
 			return err
 		}

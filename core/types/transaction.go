@@ -213,6 +213,8 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		inner = new(BlobTx)
 	case DepositTxType:
 		inner = new(DepositTx)
+	case ElderInnerTxType:
+		inner = new(ElderInnerTx)
 	default:
 		return nil, ErrTxTypeNotSupported
 	}
@@ -354,6 +356,18 @@ func (tx *Transaction) IsDepositTx() bool {
 	return tx.Type() == DepositTxType
 }
 
+// IsElderInnerTx returns true if the transaction is a deposit tx type.
+func (tx *Transaction) IsElderInnerTx() bool {
+	return tx.Type() == ElderInnerTxType
+}
+
+func (tx *Transaction) ElderOuterTx() []byte {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderOuterTx
+	}
+	return []byte{}
+}
+
 // IsSystemTx returns true for deposits that are system transactions. These transactions
 // are executed in an unmetered environment & do not contribute to the block gas limit.
 func (tx *Transaction) IsSystemTx() bool {
@@ -418,7 +432,7 @@ func (tx *Transaction) GasTipCapIntCmp(other *big.Int) int {
 // Note: if the effective gasTipCap is negative, this method returns both error
 // the actual negative value, _and_ ErrGasFeeCapTooLow
 func (tx *Transaction) EffectiveGasTip(baseFee *big.Int) (*big.Int, error) {
-	if tx.Type() == DepositTxType {
+	if tx.Type() == DepositTxType || tx.Type() == ElderInnerTxType {
 		return new(big.Int), nil
 	}
 	if baseFee == nil {

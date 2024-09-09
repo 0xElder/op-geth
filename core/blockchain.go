@@ -238,6 +238,7 @@ type BlockChain struct {
 	currentSnapBlock  atomic.Pointer[types.Header] // Current head of snap-sync
 	currentFinalBlock atomic.Pointer[types.Header] // Latest (consensus) finalized block
 	currentSafeBlock  atomic.Pointer[types.Header] // Latest (consensus) safe block
+	currentElderBlock atomic.Pointer[types.Block]  // Current elder head of the chain
 
 	bodyCache     *lru.Cache[common.Hash, *types.Body]
 	bodyRLPCache  *lru.Cache[common.Hash, rlp.RawValue]
@@ -1348,6 +1349,8 @@ func (bc *BlockChain) writeKnownBlock(block *types.Block) error {
 // writeBlockWithState writes block, metadata and corresponding state data to the
 // database.
 func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.Receipt, state *state.StateDB) error {
+	fmt.Println("########## WriteBlockWithState", block.Hash())
+
 	// Calculate the total difficulty of the block
 	ptd := bc.GetTd(block.ParentHash(), block.NumberU64()-1)
 	if ptd == nil {
@@ -1684,6 +1687,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 	}()
 
 	for ; block != nil && err == nil || errors.Is(err, ErrKnownBlock); block, err = it.next() {
+		fmt.Printf("\n####### remote block : %+v\n", block.Header())
 		// If the chain is terminating, stop processing blocks
 		if bc.insertStopped() {
 			log.Debug("Abort during block processing")
@@ -1705,7 +1709,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			if bc.chainConfig.Clique == nil {
 				logger = log.Warn
 			}
-			logger("Inserted known block", "number", block.Number(), "hash", block.Hash(),
+			logger("Inserted known block1", "number", block.Number(), "hash", block.Hash(),
 				"uncles", len(block.Uncles()), "txs", len(block.Transactions()), "gas", block.GasUsed(),
 				"root", block.Root())
 
@@ -1837,7 +1841,16 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		trieDiffNodes, trieBufNodes, _ := bc.triedb.Size()
 		stats.report(chain, it.index, snapDiffItems, snapBufItems, trieDiffNodes, trieBufNodes, setHead)
 
+		// fmt.Printf("\n############### 111 : %+v\n", block.Transactions())
+		// if IsElderBlock(block) {
+		// 	fmt.Println("SetCanon1 Elder block", block.Number(), block.Hash())
+		// 	bc.currentElderBlock.Store(block)
+		// 	fmt.Println("SetCanon2 Elder block", block.Number(), block.Hash())
+		// }
+
 		if !setHead {
+			fmt.Println("############### 1111")
+
 			// After merge we expect few side chains. Simply count
 			// all blocks the CL gives us for GC processing time
 			bc.gcproc += proctime
@@ -1846,6 +1859,8 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		}
 		switch status {
 		case CanonStatTy:
+			fmt.Println("############### 1112")
+
 			log.Debug("Inserted new block", "number", block.Number(), "hash", block.Hash(),
 				"uncles", len(block.Uncles()), "txs", len(block.Transactions()), "gas", block.GasUsed(),
 				"elapsed", common.PrettyDuration(time.Since(start)),
@@ -1857,12 +1872,16 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			bc.gcproc += proctime
 
 		case SideStatTy:
+			fmt.Println("############### 1113")
+
 			log.Debug("Inserted forked block", "number", block.Number(), "hash", block.Hash(),
 				"diff", block.Difficulty(), "elapsed", common.PrettyDuration(time.Since(start)),
 				"txs", len(block.Transactions()), "gas", block.GasUsed(), "uncles", len(block.Uncles()),
 				"root", block.Root())
 
 		default:
+			fmt.Println("############### 1114")
+
 			// This in theory is impossible, but lets be nice to our future selves and leave
 			// a log, instead of trying to track down blocks imports that don't emit logs.
 			log.Warn("Inserted block with unknown status", "number", block.Number(), "hash", block.Hash(),
@@ -1871,6 +1890,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 				"root", block.Root())
 		}
 	}
+
+	fmt.Println("############### 112")
+
+	fmt.Println("############### 113")
 
 	// Any blocks remaining here? The only ones we care about are the future ones
 	if block != nil && errors.Is(err, consensus.ErrFutureBlock) {

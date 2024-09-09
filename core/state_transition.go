@@ -150,6 +150,7 @@ type Message struct {
 	IsDepositTx    bool                 // IsDepositTx indicates the message is force-included and can persist a mint.
 	Mint           *big.Int             // Mint is the amount to mint before EVM processing, or nil if there is no minting.
 	RollupCostData types.RollupCostData // RollupCostData caches data to compute the fee we charge for data availability
+	IsElderInnerTx bool                 // IsElderTx indicates the message is an elder inner tx
 }
 
 // TransactionToMessage converts a transaction into a Message.
@@ -168,6 +169,7 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 		IsDepositTx:    tx.IsDepositTx(),
 		Mint:           tx.Mint(),
 		RollupCostData: tx.RollupCostData(),
+		IsElderInnerTx: tx.IsElderInnerTx(),
 
 		SkipAccountChecks: false,
 		BlobHashes:        tx.BlobHashes(),
@@ -292,7 +294,7 @@ func (st *StateTransition) buyGas() error {
 }
 
 func (st *StateTransition) preCheck() error {
-	if st.msg.IsDepositTx {
+	if st.msg.IsDepositTx || st.msg.IsElderInnerTx {
 		// No fee fields to check, no nonce to check, and no need to check if EOA (L1 already verified it for us)
 		// Gas is free, but no refunds!
 		st.initialGas = st.msg.GasLimit
@@ -412,7 +414,8 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	result, err := st.innerTransitionDb()
 	// Failed deposits must still be included. Unless we cannot produce the block at all due to the gas limit.
 	// On deposit failure, we rewind any state changes from after the minting, and increment the nonce.
-	if err != nil && err != ErrGasLimitReached && st.msg.IsDepositTx {
+	if err != nil && err != ErrGasLimitReached && (st.msg.IsDepositTx || st.msg.IsElderInnerTx) {
+		fmt.Println("########## FAILED TX")
 		st.state.RevertToSnapshot(snap)
 		// Even though we revert the state changes, always increment the nonce for the next deposit transaction
 		st.state.SetNonce(st.msg.From, st.state.GetNonce(st.msg.From)+1)
@@ -429,6 +432,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			Err:        fmt.Errorf("failed deposit: %w", err),
 			ReturnData: nil,
 		}
+		fmt.Println("########## FAILED TX TXGASUSED2", st.gasUsed(), result.UsedGas)
 		err = nil
 	}
 	return result, err
@@ -444,6 +448,7 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 	// 4. the purchased gas is enough to cover intrinsic usage
 	// 5. there is no overflow when calculating intrinsic gas
 	// 6. caller has enough balance to cover asset transfer for **topmost** call
+	fmt.Println("########## TXGASUSED3", st.gasUsed())
 
 	// Check clauses 1-3, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
@@ -453,13 +458,14 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 	if tracer := st.evm.Config.Tracer; tracer != nil {
 		tracer.CaptureTxStart(st.initialGas)
 		defer func() {
-			if st.msg.IsDepositTx {
+			if st.msg.IsDepositTx || st.msg.IsElderInnerTx {
 				tracer.CaptureTxEnd(0)
 			} else {
 				tracer.CaptureTxEnd(st.gasRemaining)
 			}
 		}()
 	}
+	fmt.Println("########## TXGASUSED4", st.gasUsed())
 
 	var (
 		msg              = st.msg
@@ -477,6 +483,7 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining, gas)
 	}
 	st.gasRemaining -= gas
+	fmt.Println("########## TXGASUSED5", st.gasUsed())
 
 	// Check clause 6
 	value, overflow := uint256.FromBig(msg.Value)
@@ -491,11 +498,14 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 	if rules.IsShanghai && contractCreation && len(msg.Data) > params.MaxInitCodeSize {
 		return nil, fmt.Errorf("%w: code size %v limit %v", ErrMaxInitCodeSizeExceeded, len(msg.Data), params.MaxInitCodeSize)
 	}
+	fmt.Println("########## TXGASUSED6", st.gasUsed())
 
 	// Execute the preparatory steps for state transition which includes:
 	// - prepare accessList(post-berlin)
 	// - reset transient storage(eip 1153)
 	st.state.Prepare(rules, msg.From, st.evm.Context.Coinbase, msg.To, vm.ActivePrecompiles(rules), msg.AccessList)
+
+	fmt.Println("########## TXGASUSED7", st.gasUsed())
 
 	var (
 		ret   []byte
@@ -508,10 +518,12 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 		st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1)
 		ret, st.gasRemaining, vmerr = st.evm.Call(sender, st.to(), msg.Data, st.gasRemaining, value)
 	}
+	fmt.Println("########## TXGASUSED8", st.gasUsed())
 
 	// if deposit: skip refunds, skip tipping coinbase
 	// Regolith changes this behaviour to report the actual gasUsed instead of always reporting all gas used.
-	if st.msg.IsDepositTx && !rules.IsOptimismRegolith {
+	if (st.msg.IsDepositTx && !rules.IsOptimismRegolith) || st.msg.IsElderInnerTx {
+		fmt.Println("########## TXGASUSED1", st.gasUsed())
 		// Record deposits as using all their gas (matches the gas pool)
 		// System Transactions are special & are not recorded as using any gas (anywhere)
 		gasUsed := st.msg.GasLimit
@@ -535,7 +547,8 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 		// After EIP-3529: refunds are capped to gasUsed / 5
 		gasRefund = st.refundGas(params.RefundQuotientEIP3529)
 	}
-	if st.msg.IsDepositTx && rules.IsOptimismRegolith {
+	if (st.msg.IsDepositTx && rules.IsOptimismRegolith) || st.msg.IsElderInnerTx {
+		fmt.Println("########## TXGASUSED2", st.gasUsed())
 		// Skip coinbase payments for deposit tx in Regolith
 		return &ExecutionResult{
 			UsedGas:     st.gasUsed(),
@@ -562,7 +575,7 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 
 	// Check that we are post bedrock to enable op-geth to be able to create pseudo pre-bedrock blocks (these are pre-bedrock, but don't follow l2 geth rules)
 	// Note optimismConfig will not be nil if rules.IsOptimismBedrock is true
-	if optimismConfig := st.evm.ChainConfig().Optimism; optimismConfig != nil && rules.IsOptimismBedrock && !st.msg.IsDepositTx {
+	if optimismConfig := st.evm.ChainConfig().Optimism; optimismConfig != nil && rules.IsOptimismBedrock && !st.msg.IsDepositTx && !st.msg.IsElderInnerTx {
 		gasCost := new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.evm.Context.BaseFee)
 		amtU256, overflow := uint256.FromBig(gasCost)
 		if overflow {
