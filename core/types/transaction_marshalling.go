@@ -65,7 +65,7 @@ type txJSON struct {
 	Hash common.Hash `json:"hash"`
 
 	// Elder transaction fields
-	ElderOuterTx []byte `json:"elderOuterTx,omitempty"`
+	ElderOuterTx *hexutil.Bytes `json:"elderOuterTx,omitempty"`
 }
 
 // yParityValue returns the YParity value from JSON. For backwards-compatibility reasons,
@@ -149,7 +149,7 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 		enc.Value = (*hexutil.Big)(itx.Value)
 		enc.Input = (*hexutil.Bytes)(&itx.Data)
 		enc.AccessList = &itx.AccessList
-		enc.ElderOuterTx = itx.ElderOuterTx
+		enc.ElderOuterTx = (*hexutil.Bytes)(&itx.ElderOuterTx)
 
 	case *BlobTx:
 		enc.ChainID = (*hexutil.Big)(itx.ChainID.ToBig())
@@ -388,7 +388,7 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 		if dec.ElderOuterTx == nil {
 			return errors.New("missing required field 'elderOuterTx' in transaction")
 		}
-		itx.ElderOuterTx = dec.ElderOuterTx
+		itx.ElderOuterTx = *dec.ElderOuterTx
 
 	case BlobTxType:
 		var itx BlobTx

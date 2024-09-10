@@ -312,7 +312,6 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 	}
 
 	signerCosmos := elderOuterTx.GetAuthInfo()
-	fmt.Printf("\nSigner: %v\n", signerCosmos.SignerInfos[0].PublicKey)
 
 	cosmosPubKey := &secp256k1.PubKey{}
 	err = proto.Unmarshal(signerCosmos.SignerInfos[0].PublicKey.Value, cosmosPubKey)
