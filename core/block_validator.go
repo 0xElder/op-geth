@@ -119,37 +119,9 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	return nil
 }
 
-// Check if the block is derived from Elder chain
-// func IsElderBlock(block *types.Block) bool {
-// 	// Last transaction will always be a normal/legacy transaction and not be L1BlockInfo/Deposit Transaction
-// 	// A block can have only normal txs with L1BlockInfo/Deposit Txs
-// 	// or elder txs with L1BlockInfo/Deposit Txs
-// 	if len(block.Transactions()) == 0 {
-// 		return false
-// 	}
-// 	lastTx := block.Transactions()[len(block.Transactions())-1]
-// 	return lastTx.Type() == types.ElderInnerTxType
-// }
-
 // ValidateState validates the various changes that happen after a state transition,
 // such as amount of used gas, the receipt roots and the state root itself.
 func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateDB, receipts types.Receipts, usedGas uint64) error {
-	// If the block is not an elder block, then some fields need to be updated.
-	// if IsElderBlock(block) {
-	// 	newHeader := types.CopyHeader(block.Header())
-	// 	// Update the gas used with the new gas used.
-	// 	newHeader.GasUsed = usedGas
-	// 	// Update the header bloom with the new bloom.
-	// 	newHeader.Bloom = types.CreateBloom(receipts)
-	// 	// If the block is not an elder block, then the receipt hash is not updated.
-	// 	newHeader.ReceiptHash = types.DeriveSha(receipts, trie.NewStackTrie(nil))
-	// 	// Update the state root with the new state trie root.
-	// 	newHeader.Root = statedb.IntermediateRoot(v.config.IsEIP158(newHeader.Number))
-
-	// 	block.SetHeader(newHeader)
-	// 	return nil
-	// }
-
 	header := block.Header()
 	if block.GasUsed() != usedGas {
 		return fmt.Errorf("invalid gas used (remote: %d local: %d)", block.GasUsed(), usedGas)

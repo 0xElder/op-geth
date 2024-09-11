@@ -463,10 +463,7 @@ func (r *ReceiptForStorage) DecodeRLP(s *rlp.Stream) error {
 	// First try to decode the latest receipt database format, try the pre-bedrock Optimism legacy format otherwise.
 	if err := decodeStoredReceiptRLP(r, blob); err == nil {
 		return nil
-	} else {
-		fmt.Println("decodeStoredReceiptRLP failed, trying decodeLegacyOptimismReceiptRLP", err)
 	}
-
 	return decodeLegacyOptimismReceiptRLP(r, blob)
 }
 

@@ -238,7 +238,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 	api.forkchoiceLock.Lock()
 	defer api.forkchoiceLock.Unlock()
 
-	fmt.Printf("\n######### ForkchoiceUpdatedV3: update: %+v\n", update)
 	log.Trace("Engine API request received", "method", "ForkchoiceUpdated", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash)
 	if update.HeadBlockHash == (common.Hash{}) {
 		log.Warn("Forkchoice requested update to zero hash")
@@ -254,16 +253,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 	// reason.
 	block := api.eth.BlockChain().GetBlockByHash(update.HeadBlockHash)
 	if block == nil {
-		// If the block is not known, we need to try using block Number
-		fmt.Printf("\n######### ForkchoiceUpdatedV31: block: %+v\n", block)
-		block = api.eth.BlockChain().CurrentElderBlock()
-		fmt.Printf("\n######### ForkchoiceUpdatedV33: block: %+v\n", block)
-	}
-
-	if block == nil {
-		// If the block is not known, we need to try using block Number
-		// TODO 0xsharma
-
 		// If this block was previously invalidated, keep rejecting it here too
 		if res := api.checkInvalidAncestor(update.HeadBlockHash, update.HeadBlockHash); res != nil {
 			return engine.ForkChoiceResponse{PayloadStatus: *res, PayloadID: nil}, nil
@@ -330,14 +319,11 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		}
 	}
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {
-		fmt.Println("######### ForkchoiceUpdatedV3: rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash", block.Hash())
 		// Block is not canonical, set head.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
 			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
 		}
-
 	} else if api.eth.BlockChain().CurrentBlock().Hash() == update.HeadBlockHash {
-		fmt.Println("######### ForkchoiceUpdatedV31: rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) == update.HeadBlockHash", block.Hash())
 		// If the specified head matches with our local head, do nothing and keep
 		// generating the payload. It's a special corner case that a few slots are
 		// missing and we are requested to generate the payload in slot.
@@ -502,7 +488,6 @@ func (api *ConsensusAPI) getPayload(payloadID engine.PayloadID, full bool) (*eng
 	if data == nil {
 		return nil, engine.UnknownPayload
 	}
-	fmt.Println("####### GetPayload() : ", data.ExecutionPayload.Number)
 	return data, nil
 }
 
@@ -585,8 +570,6 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 		log.Warn("Invalid NewPayload params", "params", params, "error", err)
 		return api.invalid(err, nil), nil
 	}
-
-	fmt.Printf("######### NewPayloadV3: block: %+v\n", block.Header())
 	// Stash away the last update to warn the user if the beacon client goes offline
 	api.lastNewPayloadLock.Lock()
 	api.lastNewPayloadUpdate = time.Now()

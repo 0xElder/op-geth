@@ -351,10 +351,6 @@ func (b *Block) Transaction(hash common.Hash) *Transaction {
 	return nil
 }
 
-func (b *Block) SetHeader(h *Header) {
-	b.header = h
-}
-
 // Header returns the block header (as a copy).
 func (b *Block) Header() *Header {
 	return CopyHeader(b.header)

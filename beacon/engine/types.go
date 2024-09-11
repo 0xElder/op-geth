@@ -20,11 +20,6 @@ import (
 	"fmt"
 	"math/big"
 
-	routerTypes "github.com/0xElder/elder/x/router/types"
-	elderTx "github.com/cosmos/cosmos-sdk/types/tx"
-
-	"github.com/cosmos/gogoproto/proto"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -181,7 +176,6 @@ type ForkChoiceResponse struct {
 }
 
 type ForkchoiceStateV1 struct {
-	HeadBlockNumber    uint64      `json:"headBlockNumber"`
 	HeadBlockHash      common.Hash `json:"headBlockHash"`
 	SafeBlockHash      common.Hash `json:"safeBlockHash"`
 	FinalizedBlockHash common.Hash `json:"finalizedBlockHash"`
@@ -197,78 +191,14 @@ func encodeTransactions(txs []*types.Transaction) [][]byte {
 
 func decodeTransactions(enc [][]byte) ([]*types.Transaction, error) {
 	var txs = make([]*types.Transaction, len(enc))
-	legacyTxCount := 0
-
 	for i, encTx := range enc {
 		var tx types.Transaction
 		if err := tx.UnmarshalBinary(encTx); err != nil {
-			break
-			// return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
+			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
 		}
 		txs[i] = &tx
-		legacyTxCount++
-	}
-
-	for i := legacyTxCount; i < len(enc); i++ {
-		tx, err := elderTxToEthTx(enc[i])
-		if err != nil {
-			return nil, fmt.Errorf("invalid transaction2 %d: %v", i, err)
-		}
-
-		txs[i] = tx
 	}
 	return txs, nil
-}
-
-func bytesToCosmosTx(rawTxBytes []byte) (*elderTx.Tx, error) {
-	fmt.Println("bytesToCosmosTx", rawTxBytes)
-	var tx elderTx.Tx
-
-	err := tx.Unmarshal(rawTxBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return &tx, nil
-}
-
-func elderTxToEthTx(rawElderTxBytes []byte) (*types.Transaction, error) {
-	elderTx, err := bytesToCosmosTx(rawElderTxBytes)
-	if err != nil {
-		return nil, fmt.Errorf("invalid transaction1 %+v: %v", rawElderTxBytes, err)
-	}
-
-	cosmMessage := &routerTypes.MsgSubmitRollTx{}
-	err = proto.Unmarshal(elderTx.Body.Messages[0].Value, cosmMessage)
-	if err != nil {
-		return nil, fmt.Errorf("invalid transaction3 %+v: %v", elderTx, err)
-	}
-
-	var tx types.Transaction
-	if err := tx.UnmarshalBinary(cosmMessage.TxData); err != nil {
-		return nil, fmt.Errorf("invalid transaction4 %+v: %v", elderTx, err)
-	}
-
-	elderInnerTx, err := legacyTxToElderInnerTx(&tx, rawElderTxBytes)
-	if err != nil {
-		return nil, fmt.Errorf("invalid transaction5 %+v: %v", elderTx, err)
-	}
-
-	return elderInnerTx, nil
-}
-
-func legacyTxToElderInnerTx(tx *types.Transaction, rawElderTxBytes []byte) (*types.Transaction, error) {
-	inner := types.NewTx(&types.ElderInnerTx{
-		ChainID:      tx.ChainId(),
-		Gas:          tx.Gas(),
-		To:           tx.To(),
-		Value:        tx.Value(),
-		Data:         tx.Data(),
-		AccessList:   tx.AccessList(),
-		ElderOuterTx: rawElderTxBytes,
-	})
-
-	return inner, nil
 }
 
 // ExecutableDataToBlock constructs a block from executable data.
@@ -338,12 +268,10 @@ func ExecutableDataToBlock(params ExecutableData, versionedHashes []common.Hash,
 		BlobGasUsed:      params.BlobGasUsed,
 		ParentBeaconRoot: beaconRoot,
 	}
-
 	block := types.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */).WithWithdrawals(params.Withdrawals)
-	// TODO 0xsharma : check if we need to check blockhash
-	// if block.Hash() != params.BlockHash {
-	// 	return nil, fmt.Errorf("blockhash mismatch, want %x, got %x", params.BlockHash, block.Hash())
-	// }
+	if block.Hash() != params.BlockHash {
+		return nil, fmt.Errorf("blockhash mismatch, want %x, got %x", params.BlockHash, block.Hash())
+	}
 	return block, nil
 }
 

@@ -415,7 +415,6 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// Failed deposits must still be included. Unless we cannot produce the block at all due to the gas limit.
 	// On deposit failure, we rewind any state changes from after the minting, and increment the nonce.
 	if err != nil && err != ErrGasLimitReached && (st.msg.IsDepositTx || st.msg.IsElderInnerTx) {
-		fmt.Println("########## FAILED TX")
 		st.state.RevertToSnapshot(snap)
 		// Even though we revert the state changes, always increment the nonce for the next deposit transaction
 		st.state.SetNonce(st.msg.From, st.state.GetNonce(st.msg.From)+1)
@@ -432,7 +431,9 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			Err:        fmt.Errorf("failed deposit: %w", err),
 			ReturnData: nil,
 		}
-		fmt.Println("########## FAILED TX TXGASUSED2", st.gasUsed(), result.UsedGas)
+		if st.msg.IsElderInnerTx {
+			result.Err = fmt.Errorf("failed elder inner tx: %w", err)
+		}
 		err = nil
 	}
 	return result, err
@@ -448,7 +449,6 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 	// 4. the purchased gas is enough to cover intrinsic usage
 	// 5. there is no overflow when calculating intrinsic gas
 	// 6. caller has enough balance to cover asset transfer for **topmost** call
-	fmt.Println("########## TXGASUSED3", st.gasUsed())
 
 	// Check clauses 1-3, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
@@ -465,7 +465,6 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 			}
 		}()
 	}
-	fmt.Println("########## TXGASUSED4", st.gasUsed())
 
 	var (
 		msg              = st.msg
@@ -483,7 +482,6 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining, gas)
 	}
 	st.gasRemaining -= gas
-	fmt.Println("########## TXGASUSED5", st.gasUsed())
 
 	// Check clause 6
 	value, overflow := uint256.FromBig(msg.Value)
@@ -498,14 +496,11 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 	if rules.IsShanghai && contractCreation && len(msg.Data) > params.MaxInitCodeSize {
 		return nil, fmt.Errorf("%w: code size %v limit %v", ErrMaxInitCodeSizeExceeded, len(msg.Data), params.MaxInitCodeSize)
 	}
-	fmt.Println("########## TXGASUSED6", st.gasUsed())
 
 	// Execute the preparatory steps for state transition which includes:
 	// - prepare accessList(post-berlin)
 	// - reset transient storage(eip 1153)
 	st.state.Prepare(rules, msg.From, st.evm.Context.Coinbase, msg.To, vm.ActivePrecompiles(rules), msg.AccessList)
-
-	fmt.Println("########## TXGASUSED7", st.gasUsed())
 
 	var (
 		ret   []byte
@@ -518,12 +513,10 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 		st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1)
 		ret, st.gasRemaining, vmerr = st.evm.Call(sender, st.to(), msg.Data, st.gasRemaining, value)
 	}
-	fmt.Println("########## TXGASUSED8", st.gasUsed())
 
 	// if deposit: skip refunds, skip tipping coinbase
 	// Regolith changes this behaviour to report the actual gasUsed instead of always reporting all gas used.
 	if (st.msg.IsDepositTx && !rules.IsOptimismRegolith) || st.msg.IsElderInnerTx {
-		fmt.Println("########## TXGASUSED1", st.gasUsed())
 		// Record deposits as using all their gas (matches the gas pool)
 		// System Transactions are special & are not recorded as using any gas (anywhere)
 		gasUsed := st.msg.GasLimit
@@ -548,7 +541,6 @@ func (st *StateTransition) innerTransitionDb() (*ExecutionResult, error) {
 		gasRefund = st.refundGas(params.RefundQuotientEIP3529)
 	}
 	if (st.msg.IsDepositTx && rules.IsOptimismRegolith) || st.msg.IsElderInnerTx {
-		fmt.Println("########## TXGASUSED2", st.gasUsed())
 		// Skip coinbase payments for deposit tx in Regolith
 		return &ExecutionResult{
 			UsedGas:     st.gasUsed(),

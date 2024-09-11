@@ -871,20 +871,17 @@ func (w *worker) commitElderTransactions(env *environment, elderInnerTxs []*type
 	}
 	var coalescedLogs []*types.Log
 
-	fmt.Printf("############135 commitElderTransactions: %d transactions\n", len(elderInnerTxs))
 	for _, tx := range elderInnerTxs {
-		fmt.Println("############136 commitElderTransactions: tx", tx.Hash().Hex())
-		// Check interruption signal and abort building if it's fired.
-		if interrupt != nil {
-			if signal := interrupt.Load(); signal != commitInterruptNone {
-				return signalToErr(signal)
-			}
-		}
-		fmt.Println("############137 commitElderTransactions: tx", tx.Hash().Hex())
+		// TODO :: 0xsharma : Check interruption signal and abort building if it's fired.
+		// // Check interruption signal and abort building if it's fired.
+		// if interrupt != nil {
+		// 	if signal := interrupt.Load(); signal != commitInterruptNone {
+		// 		return signalToErr(signal)
+		// 	}
+		// }
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 
-		fmt.Println("############138 commitElderTransactions: tx", tx.Hash().Hex())
 		logs, err := w.commitTransaction(env, tx)
 		switch {
 		case errors.Is(err, nil):
@@ -894,7 +891,6 @@ func (w *worker) commitElderTransactions(env *environment, elderInnerTxs []*type
 		default:
 			log.Crit("Unexpected error during elder transaction execution", "err", err)
 		}
-		fmt.Println("############139 commitElderTransactions: tx", tx.Hash().Hex())
 	}
 	if !w.isRunning() && len(coalescedLogs) > 0 {
 		// We don't push the pendingLogsEvent while we are sealing. The reason is that
@@ -1297,9 +1293,6 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			log.Crit("Failed to convert txs to bytes", "err", err)
 			return err
 		}
-
-		fmt.Printf("\n######## fillTransactions txs : %+v \n", len(txs))
-
 		if err := w.commitElderTransactions(env, txs, interrupt); err != nil {
 			log.Crit("Failed to commit elder transactions", "err", err)
 			return err
@@ -1346,7 +1339,6 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 		plainTxs := newTransactionsByPriceAndNonce(env.signer, localPlainTxs, env.header.BaseFee)
 		blobTxs := newTransactionsByPriceAndNonce(env.signer, localBlobTxs, env.header.BaseFee)
 
-		fmt.Println("######## fillTransactions localPlainTxs", len(localPlainTxs))
 		if err := w.commitTransactions(env, plainTxs, blobTxs, interrupt); err != nil {
 			return err
 		}
@@ -1355,7 +1347,6 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 		plainTxs := newTransactionsByPriceAndNonce(env.signer, remotePlainTxs, env.header.BaseFee)
 		blobTxs := newTransactionsByPriceAndNonce(env.signer, remoteBlobTxs, env.header.BaseFee)
 
-		fmt.Println("######## fillTransactions remotePlainTxs", len(localPlainTxs))
 		if err := w.commitTransactions(env, plainTxs, blobTxs, interrupt); err != nil {
 			return err
 		}
