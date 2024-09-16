@@ -28,6 +28,7 @@ const ElderInnerTxType = 0x65
 
 type ElderInnerTx struct {
 	ChainID    *big.Int
+	Nonce      uint64
 	Gas        uint64
 	To         *common.Address `rlp:"nil"` // nil means contract creation
 	Value      *big.Int
@@ -48,14 +49,20 @@ type ElderInnerTx struct {
 // copy creates a deep copy of the transaction data and initializes all fields.
 func (tx *ElderInnerTx) copy() TxData {
 	cpy := &ElderInnerTx{
-		To:   copyAddressPtr(tx.To),
-		Data: common.CopyBytes(tx.Data),
-		Gas:  tx.Gas,
+		Nonce: tx.Nonce,
+		To:    copyAddressPtr(tx.To),
+		Data:  common.CopyBytes(tx.Data),
+		Gas:   tx.Gas,
 		// These are copied below.
-		AccessList:   make(AccessList, len(tx.AccessList)),
-		Value:        new(big.Int),
-		ChainID:      new(big.Int),
-		ElderOuterTx: common.CopyBytes(tx.ElderOuterTx),
+		AccessList:           make(AccessList, len(tx.AccessList)),
+		Value:                new(big.Int),
+		ChainID:              new(big.Int),
+		V:                    new(big.Int),
+		R:                    new(big.Int),
+		S:                    new(big.Int),
+		ElderOuterTx:         common.CopyBytes(tx.ElderOuterTx),
+		ElderAccountSequence: tx.ElderAccountSequence,
+		ElderPublicKey:       tx.ElderPublicKey,
 	}
 	copy(cpy.AccessList, tx.AccessList)
 	if tx.Value != nil {
@@ -64,7 +71,15 @@ func (tx *ElderInnerTx) copy() TxData {
 	if tx.ChainID != nil {
 		cpy.ChainID.Set(tx.ChainID)
 	}
-
+	if tx.V != nil {
+		cpy.V.Set(tx.V)
+	}
+	if tx.R != nil {
+		cpy.R.Set(tx.R)
+	}
+	if tx.S != nil {
+		cpy.S.Set(tx.S)
+	}
 	return cpy
 }
 
@@ -78,7 +93,7 @@ func (tx *ElderInnerTx) gasFeeCap() *big.Int    { return common.Big0 }
 func (tx *ElderInnerTx) gasTipCap() *big.Int    { return common.Big0 }
 func (tx *ElderInnerTx) gasPrice() *big.Int     { return common.Big0 }
 func (tx *ElderInnerTx) value() *big.Int        { return tx.Value }
-func (tx *ElderInnerTx) nonce() uint64          { return 0 }
+func (tx *ElderInnerTx) nonce() uint64          { return tx.Nonce }
 func (tx *ElderInnerTx) to() *common.Address    { return tx.To }
 func (tx *ElderInnerTx) isSystemTx() bool       { return false }
 

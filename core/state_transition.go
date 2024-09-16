@@ -294,6 +294,7 @@ func (st *StateTransition) buyGas() error {
 }
 
 func (st *StateTransition) preCheck() error {
+	// todo :: 0xsharma : check nonce situation of double signed tx.
 	if st.msg.IsDepositTx || st.msg.IsElderInnerTx {
 		// No fee fields to check, no nonce to check, and no need to check if EOA (L1 already verified it for us)
 		// Gas is free, but no refunds!

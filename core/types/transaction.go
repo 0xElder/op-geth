@@ -565,6 +565,17 @@ func (tx *Transaction) Hash() common.Hash {
 	var h common.Hash
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
+	} else if tx.Type() == ElderInnerTxType {
+		v, r, s := tx.RawSignatureValues()
+		if v == nil || r == nil || s == nil {
+			h = prefixedRlpHash(tx.Type(), tx.inner)
+		} else {
+			origTx, _, _, err := ElderTxToEthTx(tx.ElderOuterTx())
+			if err != nil {
+				log.Crit("failed to decode elder outer tx", "err", err)
+			}
+			h = origTx.Hash()
+		}
 	} else {
 		h = prefixedRlpHash(tx.Type(), tx.inner)
 	}
