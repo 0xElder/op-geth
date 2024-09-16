@@ -157,6 +157,11 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 		receipt.BlobGasPrice = evm.Context.BlobBaseFee
 	}
 
+	// TODO :: 0xsharma : ElderOuterTx not visibile in tx receipt
+	// if tx.Type() == types.ElderInnerTxType {
+	// 	receipt.ElderOuterTx = tx.ElderOuterTx()
+	// }
+
 	// If the transaction created a contract, store the creation address in the receipt.
 	if msg.To == nil {
 		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, nonce)

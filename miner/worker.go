@@ -18,7 +18,6 @@ package miner
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,10 +44,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
-
-	routerTypes "github.com/0xElder/elder/x/router/types"
-	elderTx "github.com/cosmos/cosmos-sdk/types/tx"
-	"github.com/cosmos/gogoproto/proto"
 )
 
 const (
@@ -1167,114 +1162,29 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	return env, nil
 }
 
-type ElderGetTxByBlockResponse struct {
-	RollID string `json:"rollId"`
-	Txs    struct {
-		Block string   `json:"block"`
-		Txs   []string `json:"txs"`
-	} `json:"txs"`
-}
-
 // Query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
-func (w *worker) queryFromElder() (ElderGetTxByBlockResponse, error) {
-	elderResp := &ElderGetTxByBlockResponse{}
+func (w *worker) queryFromElder() (types.ElderGetTxByBlockResponse, error) {
+	elderResp := &types.ElderGetTxByBlockResponse{}
 
 	url := w.elderSeqURL
 	if url == "" {
-		return ElderGetTxByBlockResponse{}, errors.New("elder seq url not set")
+		return types.ElderGetTxByBlockResponse{}, errors.New("elder seq url not set")
 	}
 
 	response, err := http.Get(url)
 	if err != nil {
-		return ElderGetTxByBlockResponse{}, err
+		return types.ElderGetTxByBlockResponse{}, err
 	}
 
 	responseData, err := io.ReadAll(response.Body)
 	if err != nil {
-		return ElderGetTxByBlockResponse{}, err
+		return types.ElderGetTxByBlockResponse{}, err
 	}
 
 	json.Unmarshal(responseData, &elderResp)
 
 	return *elderResp, nil
-}
-
-func txsStringToTxs(txs []string) ([]*types.Transaction, error) {
-	elderInnerTxs := make([]*types.Transaction, len(txs))
-	for i, tx := range txs {
-		txBytes, err := base64toBytes(tx)
-		if err != nil {
-			return []*types.Transaction{}, err
-		}
-
-		elderInnerTx, err := elderTxToEthTx(txBytes)
-		if err != nil {
-			return []*types.Transaction{}, err
-		}
-
-		elderInnerTxs[i] = elderInnerTx
-	}
-	return elderInnerTxs, nil
-}
-
-func base64toBytes(in string) ([]byte, error) {
-	out, err := base64.StdEncoding.DecodeString(in)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	return out, nil
-}
-
-func bytesToCosmosTx(rawTxBytes []byte) (*elderTx.Tx, error) {
-	var tx elderTx.Tx
-
-	err := tx.Unmarshal(rawTxBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return &tx, nil
-}
-
-func elderTxToEthTx(rawElderTxBytes []byte) (*types.Transaction, error) {
-	elderTx, err := bytesToCosmosTx(rawElderTxBytes)
-	if err != nil {
-		return nil, fmt.Errorf("invalid transaction1 %+v: %v", rawElderTxBytes, err)
-	}
-
-	cosmMessage := &routerTypes.MsgSubmitRollTx{}
-	err = proto.Unmarshal(elderTx.Body.Messages[0].Value, cosmMessage)
-	if err != nil {
-		return nil, fmt.Errorf("invalid transaction3 %+v: %v", elderTx, err)
-	}
-
-	var tx types.Transaction
-	if err := tx.UnmarshalBinary(cosmMessage.TxData); err != nil {
-		return nil, fmt.Errorf("invalid transaction4 %+v: %v", elderTx, err)
-	}
-
-	elderInnerTx, err := legacyTxToElderInnerTx(&tx, rawElderTxBytes)
-	if err != nil {
-		return nil, fmt.Errorf("invalid transaction5 %+v: %v", elderTx, err)
-	}
-
-	return elderInnerTx, nil
-}
-
-func legacyTxToElderInnerTx(tx *types.Transaction, rawElderTxBytes []byte) (*types.Transaction, error) {
-	inner := types.NewTx(&types.ElderInnerTx{
-		ChainID:      tx.ChainId(),
-		Gas:          tx.Gas(),
-		To:           tx.To(),
-		Value:        tx.Value(),
-		Data:         tx.Data(),
-		AccessList:   tx.AccessList(),
-		ElderOuterTx: rawElderTxBytes,
-	})
-
-	return inner, nil
 }
 
 // fillTransactions retrieves the pending transactions from the txpool and fills them
@@ -1288,7 +1198,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			return err
 		}
 
-		txs, err := txsStringToTxs(resp.Txs.Txs)
+		txs, err := types.TxsStringToTxs(resp.Txs.Txs)
 		if err != nil {
 			log.Crit("Failed to convert txs to bytes", "err", err)
 			return err

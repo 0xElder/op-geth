@@ -386,7 +386,7 @@ func (tx *Transaction) Cost() *big.Int {
 
 // RollupCostData caches the information needed to efficiently compute the data availability fee
 func (tx *Transaction) RollupCostData() RollupCostData {
-	if tx.Type() == DepositTxType {
+	if tx.Type() == DepositTxType || tx.Type() == ElderInnerTxType {
 		return RollupCostData{}
 	}
 	if v := tx.rollupCostData.Load(); v != nil {

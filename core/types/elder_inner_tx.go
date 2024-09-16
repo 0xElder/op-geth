@@ -34,8 +34,15 @@ type ElderInnerTx struct {
 	Data       []byte
 	AccessList AccessList
 
+	// Signature values
+	V *big.Int
+	R *big.Int
+	S *big.Int
+
 	// ElderOuterTx contains the outer transaction that wraps this inner transaction. It is required to verify the signatures as outer tx is the signed tx.
-	ElderOuterTx []byte
+	ElderOuterTx         []byte
+	ElderAccountSequence uint64
+	ElderPublicKey       string
 }
 
 // copy creates a deep copy of the transaction data and initializes all fields.
@@ -80,11 +87,11 @@ func (tx *ElderInnerTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.I
 }
 
 func (tx *ElderInnerTx) rawSignatureValues() (v, r, s *big.Int) {
-	return common.Big0, common.Big0, common.Big0
+	return tx.V, tx.R, tx.S
 }
 
 func (tx *ElderInnerTx) setSignatureValues(chainID, v, r, s *big.Int) {
-	// unimplemented for elder inner transactions
+	tx.V, tx.R, tx.S = v, r, s
 }
 
 func (tx *ElderInnerTx) encode(b *bytes.Buffer) error {
