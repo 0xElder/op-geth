@@ -368,6 +368,32 @@ func (tx *Transaction) ElderOuterTx() []byte {
 	return []byte{}
 }
 
+// IsElderDoubleSignedInnerTx returns true if the elder tx (cosmos tx) contains a signed eth tx
+func (tx *Transaction) IsElderDoubleSignedInnerTx() bool {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		v, r, s := txData.rawSignatureValues()
+		if v == nil || r == nil || s == nil {
+			return false
+		}
+		return true
+	}
+
+	return false
+}
+
+func (tx *Transaction) ElderStatus() bool {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderStatus
+	}
+	return false
+}
+
+func (tx *Transaction) SetElderStatus(status bool) {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		txData.ElderStatus = status
+	}
+}
+
 // IsSystemTx returns true for deposits that are system transactions. These transactions
 // are executed in an unmetered environment & do not contribute to the block gas limit.
 func (tx *Transaction) IsSystemTx() bool {
@@ -570,11 +596,15 @@ func (tx *Transaction) Hash() common.Hash {
 		if v == nil || r == nil || s == nil {
 			h = prefixedRlpHash(tx.Type(), tx.inner)
 		} else {
-			origTx, _, _, err := ElderTxToEthTx(tx.ElderOuterTx())
-			if err != nil {
-				log.Crit("failed to decode elder outer tx", "err", err)
+			if !tx.ElderStatus() {
+				h = prefixedRlpHash(tx.Type(), tx.inner)
+			} else {
+				origTx, _, _, err := ElderTxToEthTx(tx.ElderOuterTx())
+				if err != nil {
+					log.Crit("failed to decode elder outer tx", "err", err)
+				}
+				h = origTx.Hash()
 			}
-			h = origTx.Hash()
 		}
 	} else {
 		h = prefixedRlpHash(tx.Type(), tx.inner)

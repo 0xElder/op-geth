@@ -146,30 +146,32 @@ type Message struct {
 	// This field will be set to true for operations like RPC eth_call.
 	SkipAccountChecks bool
 
-	IsSystemTx     bool                 // IsSystemTx indicates the message, if also a deposit, does not emit gas usage.
-	IsDepositTx    bool                 // IsDepositTx indicates the message is force-included and can persist a mint.
-	Mint           *big.Int             // Mint is the amount to mint before EVM processing, or nil if there is no minting.
-	RollupCostData types.RollupCostData // RollupCostData caches data to compute the fee we charge for data availability
-	IsElderInnerTx bool                 // IsElderTx indicates the message is an elder inner tx
+	IsSystemTx                 bool                 // IsSystemTx indicates the message, if also a deposit, does not emit gas usage.
+	IsDepositTx                bool                 // IsDepositTx indicates the message is force-included and can persist a mint.
+	Mint                       *big.Int             // Mint is the amount to mint before EVM processing, or nil if there is no minting.
+	RollupCostData             types.RollupCostData // RollupCostData caches data to compute the fee we charge for data availability
+	IsElderInnerTx             bool                 // IsElderTx indicates the message is an elder inner tx
+	IsElderDoubleSignedInnerTx bool                 // IsElderDoubleSignedInnerTx indicates if the elder tx (cosmos tx) contains a signed eth tx
 }
 
 // TransactionToMessage converts a transaction into a Message.
 func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.Int) (*Message, error) {
 	msg := &Message{
-		Nonce:          tx.Nonce(),
-		GasLimit:       tx.Gas(),
-		GasPrice:       new(big.Int).Set(tx.GasPrice()),
-		GasFeeCap:      new(big.Int).Set(tx.GasFeeCap()),
-		GasTipCap:      new(big.Int).Set(tx.GasTipCap()),
-		To:             tx.To(),
-		Value:          tx.Value(),
-		Data:           tx.Data(),
-		AccessList:     tx.AccessList(),
-		IsSystemTx:     tx.IsSystemTx(),
-		IsDepositTx:    tx.IsDepositTx(),
-		Mint:           tx.Mint(),
-		RollupCostData: tx.RollupCostData(),
-		IsElderInnerTx: tx.IsElderInnerTx(),
+		Nonce:                      tx.Nonce(),
+		GasLimit:                   tx.Gas(),
+		GasPrice:                   new(big.Int).Set(tx.GasPrice()),
+		GasFeeCap:                  new(big.Int).Set(tx.GasFeeCap()),
+		GasTipCap:                  new(big.Int).Set(tx.GasTipCap()),
+		To:                         tx.To(),
+		Value:                      tx.Value(),
+		Data:                       tx.Data(),
+		AccessList:                 tx.AccessList(),
+		IsSystemTx:                 tx.IsSystemTx(),
+		IsDepositTx:                tx.IsDepositTx(),
+		Mint:                       tx.Mint(),
+		RollupCostData:             tx.RollupCostData(),
+		IsElderInnerTx:             tx.IsElderInnerTx(),
+		IsElderDoubleSignedInnerTx: tx.IsElderDoubleSignedInnerTx(),
 
 		SkipAccountChecks: false,
 		BlobHashes:        tx.BlobHashes(),
@@ -294,7 +296,6 @@ func (st *StateTransition) buyGas() error {
 }
 
 func (st *StateTransition) preCheck() error {
-	// todo :: 0xsharma : check nonce situation of double signed tx.
 	if st.msg.IsDepositTx || st.msg.IsElderInnerTx {
 		// No fee fields to check, no nonce to check, and no need to check if EOA (L1 already verified it for us)
 		// Gas is free, but no refunds!
@@ -307,6 +308,22 @@ func (st *StateTransition) preCheck() error {
 					st.msg.From.Hex())
 			}
 			return nil
+		}
+
+		if st.msg.IsElderDoubleSignedInnerTx {
+			msg := st.msg
+			// Make sure this transaction's nonce is correct.
+			stNonce := st.state.GetNonce(msg.From)
+			if msgNonce := msg.Nonce; stNonce < msgNonce {
+				return fmt.Errorf("%w: address %v, tx: %d state: %d", ErrNonceTooHigh,
+					msg.From.Hex(), msgNonce, stNonce)
+			} else if stNonce > msgNonce {
+				return fmt.Errorf("%w: address %v, tx: %d state: %d", ErrNonceTooLow,
+					msg.From.Hex(), msgNonce, stNonce)
+			} else if stNonce+1 < stNonce {
+				return fmt.Errorf("%w: address %v, nonce: %d", ErrNonceMax,
+					msg.From.Hex(), stNonce)
+			}
 		}
 		return st.gp.SubGas(st.msg.GasLimit) // gas used by deposits may not be used by other txs
 	}

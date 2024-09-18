@@ -874,6 +874,18 @@ func (w *worker) commitElderTransactions(env *environment, elderInnerTxs []*type
 		// 		return signalToErr(signal)
 		// 	}
 		// }
+
+		if tx.IsElderDoubleSignedInnerTx() {
+			from, err := w.current.signer.Sender(tx)
+			if err != nil {
+				log.Crit("Failed to get sender", "err", err)
+			}
+			reqNonce := env.state.GetNonce(from)
+			if reqNonce != tx.Nonce() {
+				tx.SetElderStatus(false)
+			}
+		}
+
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 

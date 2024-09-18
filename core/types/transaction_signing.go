@@ -255,6 +255,7 @@ func NewLondonSigner(chainId *big.Int) Signer {
 	return londonSigner{eip2930Signer{NewEIP155Signer(chainId)}}
 }
 
+// todo :: 0xsharma : add elderInnerTx checks for other signers as well
 func (s londonSigner) Sender(tx *Transaction) (common.Address, error) {
 	if tx.Type() == DepositTxType {
 		switch tx.inner.(type) {

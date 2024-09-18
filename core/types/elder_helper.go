@@ -119,6 +119,7 @@ func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint
 		ElderOuterTx:         rawElderTxBytes,
 		ElderAccountSequence: accSeq,
 		ElderPublicKey:       accPublicKeyStr,
+		ElderStatus:          true,
 	})
 
 	fmt.Println("elder inner txHash", inner.Hash().Hex())
