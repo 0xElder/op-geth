@@ -592,8 +592,7 @@ func (tx *Transaction) Hash() common.Hash {
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
 	} else if tx.Type() == ElderInnerTxType {
-		v, r, s := tx.RawSignatureValues()
-		if v == nil || r == nil || s == nil {
+		if !tx.IsElderDoubleSignedInnerTx() {
 			h = prefixedRlpHash(tx.Type(), tx.inner)
 		} else {
 			if !tx.ElderStatus() {

@@ -101,7 +101,7 @@ func ElderTxToElderInnerTx(rawElderTxBytes []byte) (*Transaction, error) {
 func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint64, accPublicKeyStr string) (*Transaction, error) {
 	v, r, s := tx.RawSignatureValues()
 	nonce := tx.Nonce()
-	if v == nil || r == nil || s == nil {
+	if !tx.IsElderDoubleSignedInnerTx() {
 		nonce = 0
 	}
 
