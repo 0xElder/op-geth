@@ -544,10 +544,12 @@ func (rs Receipts) EncodeIndex(i int, w *bytes.Buffer) {
 			// post-canyon receipt hash computation update
 			depositData := &depositReceiptRLP{data.PostStateOrStatus, data.CumulativeGasUsed, r.Bloom, r.Logs, r.DepositNonce, r.DepositReceiptVersion}
 			rlp.Encode(w, depositData)
-		} else if r.ElderOuterTx != nil {
-			rlp.Encode(w, &elderReceiptRLP{data.PostStateOrStatus, data.CumulativeGasUsed, data.Bloom, data.Logs, r.ElderOuterTx})
 		} else {
 			rlp.Encode(w, data)
+		}
+	case ElderInnerTxType:
+		if r.ElderOuterTx != nil {
+			rlp.Encode(w, &elderReceiptRLP{data.PostStateOrStatus, data.CumulativeGasUsed, r.Bloom, r.Logs, r.ElderOuterTx})
 		}
 	default:
 		// For unsupported types, write nothing. Since this is for
