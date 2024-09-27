@@ -65,6 +65,7 @@ type Config struct {
 
 	ElderSequencerEnabled bool   `json:"elder_sequencer_enabled"`
 	ElderSeqURL           string `json:"elder_seq_url"`
+	ElderRollID           uint64 `json:"elder_roll_id"`
 }
 
 // DefaultConfig contains default settings for miner.

@@ -131,6 +131,7 @@ var (
 		utils.MinerNewPayloadTimeout,
 		utils.ElderSequencerEnabledFlag,
 		utils.ElderSeqURLFlag,
+		utils.ElderRollIDFlag,
 		utils.NATFlag,
 		utils.NoDiscoverFlag,
 		utils.DiscoveryV4Flag,

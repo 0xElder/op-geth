@@ -517,6 +517,12 @@ var (
 		Usage:    "URL of the Elder sequencer",
 		Category: flags.MiscCategory,
 	}
+	ElderRollIDFlag = &cli.Uint64Flag{
+		Name:     "elder-roll-id",
+		Usage:    "ID of the Elder sequencer",
+		Value:    0,
+		Category: flags.MiscCategory,
+	}
 
 	// Account settings
 	UnlockedAccountFlag = &cli.StringFlag{

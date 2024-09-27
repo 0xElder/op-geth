@@ -251,6 +251,7 @@ type worker struct {
 
 	elderSequencerEnabled bool
 	elderSeqURL           string
+	elderRollID           uint64
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(header *types.Header) bool, init bool) *worker {
@@ -278,10 +279,11 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus
 		resubmitAdjustCh:      make(chan *intervalAdjust, resubmitAdjustChanSize),
 		elderSequencerEnabled: config.ElderSequencerEnabled,
 		elderSeqURL:           config.ElderSeqURL,
+		elderRollID:           config.ElderRollID,
 	}
 
-	if worker.config.ElderSequencerEnabled && worker.elderSeqURL == "" {
-		log.Crit("Elder sequencer enabled but no URL specified")
+	if worker.config.ElderSequencerEnabled && (worker.elderSeqURL == "" || worker.elderRollID == 0) {
+		log.Crit("Elder sequencer enabled but no URL/RollID specified", "url", worker.elderSeqURL, "rollID", worker.elderRollID)
 	}
 
 	// Subscribe for transaction insertion events (whether from network or resurrects)
@@ -1179,13 +1181,17 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 func (w *worker) queryFromElder() (types.ElderGetTxByBlockResponse, error) {
 	elderResp := &types.ElderGetTxByBlockResponse{}
 
-	url := w.elderSeqURL
-	if url == "" {
+	baseUrl := w.elderSeqURL
+	if baseUrl == "" {
 		return types.ElderGetTxByBlockResponse{}, errors.New("elder seq url not set")
 	}
 
+	currBlock := w.chain.CurrentBlock().Number.Uint64()
+	url := fmt.Sprintf("%s/0xElder/elder/router/tx_by_block/%d/%d", baseUrl, w.elderRollID, currBlock)
+
 	response, err := http.Get(url)
 	if err != nil {
+		fmt.Println("Failed to query elder sequencer", "err", err)
 		return types.ElderGetTxByBlockResponse{}, err
 	}
 
@@ -1194,7 +1200,22 @@ func (w *worker) queryFromElder() (types.ElderGetTxByBlockResponse, error) {
 		return types.ElderGetTxByBlockResponse{}, err
 	}
 
-	json.Unmarshal(responseData, &elderResp)
+	elderInvalidResp := &types.ElderGetTxByBlockResponseInvalid{}
+	err = json.Unmarshal(responseData, &elderResp)
+	if err != nil {
+		err := json.Unmarshal(responseData, &elderInvalidResp)
+		if err != nil {
+			return types.ElderGetTxByBlockResponse{}, err
+		}
+		switch elderInvalidResp.Code {
+		case types.ElderBlockHeightLessThanStart:
+			return types.ElderGetTxByBlockResponse{}, types.ElderBlockHeightLessThanStartError
+		case types.ElderBlockHeighMoreThanCurrent:
+			return types.ElderGetTxByBlockResponse{}, types.ElderBlockHeighMoreThanCurrentError
+		default:
+			return types.ElderGetTxByBlockResponse{}, errors.New("unknown error")
+		}
+	}
 
 	return *elderResp, nil
 }
@@ -1206,11 +1227,20 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 	if w.elderSequencerEnabled {
 		resp, err := w.queryFromElder()
 		if err != nil {
-			log.Crit("Failed to query elder sequencer", "err", err)
-			return err
+			switch err {
+			case types.ElderBlockHeightLessThanStartError:
+				log.Debug("Elder sequencer block height less than start")
+				goto legacy
+			case types.ElderBlockHeighMoreThanCurrentError:
+				log.Debug("Elder sequencer block height more than current")
+				return errBlockInterruptedByNewHead
+			default:
+				log.Crit("Failed to query elder sequencer", "err", err)
+				return err
+			}
 		}
 
-		txs, err := types.TxsStringToTxs(resp.Txs.Txs)
+		txs, err := types.TxsStringToTxs(resp.Txs.TxList)
 		if err != nil {
 			log.Crit("Failed to convert txs to bytes", "err", err)
 			return err
@@ -1222,6 +1252,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 		return nil
 	}
 
+legacy:
 	w.mu.RLock()
 	tip := w.tip
 	w.mu.RUnlock()

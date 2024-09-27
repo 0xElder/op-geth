@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"cosmossdk.io/api/cosmos/crypto/secp256k1"
@@ -13,12 +14,29 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+const (
+	ElderBlockHeightLessThanStart  = 1110
+	ElderBlockHeighMoreThanCurrent = 1111
+)
+
+var (
+	ElderBlockHeightLessThanStartError  = errors.New("block height is less than start")
+	ElderBlockHeighMoreThanCurrentError = errors.New("block height is more than current")
+)
+
 type ElderGetTxByBlockResponse struct {
 	RollID string `json:"rollId"`
 	Txs    struct {
-		Block string   `json:"block"`
-		Txs   []string `json:"txs"`
+		Block  string   `json:"block"`
+		TxList []string `json:"txList"`
 	} `json:"txs"`
+	CurrentHeight string `json:"currentHeight"`
+}
+
+type ElderGetTxByBlockResponseInvalid struct {
+	Code    int           `json:"code"`
+	Message string        `json:"message"`
+	Details []interface{} `json:"details"`
 }
 
 func TxsStringToTxs(txs []string) ([]*Transaction, error) {
