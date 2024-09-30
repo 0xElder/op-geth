@@ -85,6 +85,7 @@ var (
 	errBlockInterruptedByRecommit = errors.New("recommit interrupt while building block")
 	errBlockInterruptedByTimeout  = errors.New("timeout while building block")
 	errBlockInterruptedByResolve  = errors.New("payload resolution while building block")
+	errBlockInterruptedByElder    = errors.New("elder sequencer aborting building block")
 )
 
 // environment is the worker's current environment and holds all
@@ -1231,17 +1232,17 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 		if err != nil {
 			switch err {
 			case types.ErrElderBlockHeightLessThanStart:
-				log.Debug("Elder sequencer block height less than start")
+				log.Info("Block height less than elder start block, building normal block")
 				goto legacy
 			case types.ErrElderBlockHeighMoreThanCurrent:
-				log.Debug("Elder sequencer block height more than current")
-				return errBlockInterruptedByNewHead
+				log.Info("Block height more than current block in Elder")
+				return errBlockInterruptedByElder
 			case types.ErrRollupIDNotAvailable:
 				log.Warn("Rollup ID not available")
 				goto legacy
 			default:
 				log.Warn("Failed to query elder sequencer", "err", err)
-				return errBlockInterruptedByNewHead
+				return errBlockInterruptedByElder
 			}
 		}
 
@@ -1356,6 +1357,9 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 			log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
 		} else if errors.Is(err, errBlockInterruptedByResolve) {
 			log.Info("Block building got interrupted by payload resolution")
+		} else if errors.Is(err, errBlockInterruptedByElder) {
+			log.Debug("Block building got interrupted by elder sequencer")
+			return &newPayloadResult{err: err}
 		}
 	}
 	if intr := genParams.interrupt; intr != nil && genParams.isUpdate && intr.Load() != commitInterruptNone {
