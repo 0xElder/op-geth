@@ -1209,9 +1209,11 @@ func (w *worker) queryFromElder() (types.ElderGetTxByBlockResponse, error) {
 		}
 		switch elderInvalidResp.Code {
 		case types.ElderBlockHeightLessThanStart:
-			return types.ElderGetTxByBlockResponse{}, types.ElderBlockHeightLessThanStartError
+			return types.ElderGetTxByBlockResponse{}, types.ErrElderBlockHeightLessThanStart
 		case types.ElderBlockHeighMoreThanCurrent:
-			return types.ElderGetTxByBlockResponse{}, types.ElderBlockHeighMoreThanCurrentError
+			return types.ElderGetTxByBlockResponse{}, types.ErrElderBlockHeighMoreThanCurrent
+		case types.RollupIDNotAvailable:
+			return types.ElderGetTxByBlockResponse{}, types.ErrRollupIDNotAvailable
 		default:
 			return types.ElderGetTxByBlockResponse{}, errors.New("unknown error")
 		}
@@ -1228,12 +1230,15 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 		resp, err := w.queryFromElder()
 		if err != nil {
 			switch err {
-			case types.ElderBlockHeightLessThanStartError:
+			case types.ErrElderBlockHeightLessThanStart:
 				log.Debug("Elder sequencer block height less than start")
 				goto legacy
-			case types.ElderBlockHeighMoreThanCurrentError:
+			case types.ErrElderBlockHeighMoreThanCurrent:
 				log.Debug("Elder sequencer block height more than current")
 				return errBlockInterruptedByNewHead
+			case types.ErrRollupIDNotAvailable:
+				log.Warn("Rollup ID not available")
+				goto legacy
 			default:
 				log.Crit("Failed to query elder sequencer", "err", err)
 				return err

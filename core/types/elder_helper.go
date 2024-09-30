@@ -17,11 +17,13 @@ import (
 const (
 	ElderBlockHeightLessThanStart  = 1110
 	ElderBlockHeighMoreThanCurrent = 1111
+	RollupIDNotAvailable           = 2
 )
 
 var (
-	ElderBlockHeightLessThanStartError  = errors.New("block height is less than start")
-	ElderBlockHeighMoreThanCurrentError = errors.New("block height is more than current")
+	ErrElderBlockHeightLessThanStart  = errors.New("block height is less than start")
+	ErrElderBlockHeighMoreThanCurrent = errors.New("block height is more than current")
+	ErrRollupIDNotAvailable           = errors.New("rollup id not available")
 )
 
 type ElderGetTxByBlockResponse struct {
