@@ -1660,6 +1660,9 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.IsSet(ElderSeqURLFlag.Name) {
 		cfg.ElderSeqURL = ctx.String(ElderSeqURLFlag.Name)
 	}
+	if ctx.IsSet(ElderRollIDFlag.Name) {
+		cfg.ElderRollID = ctx.Uint64(ElderRollIDFlag.Name)
+	}
 }
 
 func setRequiredBlocks(ctx *cli.Context, cfg *ethconfig.Config) {
