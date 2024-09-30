@@ -1240,8 +1240,8 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 				log.Warn("Rollup ID not available")
 				goto legacy
 			default:
-				log.Crit("Failed to query elder sequencer", "err", err)
-				return err
+				log.Warn("Failed to query elder sequencer", "err", err)
+				return errBlockInterruptedByNewHead
 			}
 		}
 
