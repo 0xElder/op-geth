@@ -86,6 +86,7 @@ var (
 	errBlockInterruptedByTimeout  = errors.New("timeout while building block")
 	errBlockInterruptedByResolve  = errors.New("payload resolution while building block")
 	errBlockInterruptedByElder    = errors.New("elder sequencer aborting building block")
+	errUnableToQueryElder         = errors.New("unable to query elder sequencer, chain halt")
 )
 
 // environment is the worker's current environment and holds all
@@ -581,7 +582,17 @@ func (w *worker) mainLoop() {
 			w.commitWork(req.interrupt, req.timestamp)
 
 		case req := <-w.getWorkCh:
-			req.result <- w.generateWork(req.params)
+			for {
+				work := w.generateWork(req.params)
+				if work != nil && work.err != errUnableToQueryElder {
+					req.result <- work
+					break
+				}
+
+				log.Error("Chain halt: elder unavailable, please check the elder URL")
+				log.Info("Retrying in 5 seconds")
+				time.Sleep(5 * time.Second)
+			}
 
 		case ev := <-w.txsCh:
 			if (w.chainConfig.Optimism != nil && !w.config.RollupComputePendingBlock) || w.elderSequencerEnabled {
@@ -1242,7 +1253,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 				goto legacy
 			default:
 				log.Warn("Failed to query elder sequencer", "err", err)
-				return errBlockInterruptedByElder
+				return errUnableToQueryElder
 			}
 		}
 
@@ -1357,7 +1368,7 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 			log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
 		} else if errors.Is(err, errBlockInterruptedByResolve) {
 			log.Info("Block building got interrupted by payload resolution")
-		} else if errors.Is(err, errBlockInterruptedByElder) {
+		} else if errors.Is(err, errBlockInterruptedByElder) || errors.Is(err, errUnableToQueryElder) {
 			log.Debug("Block building got interrupted by elder sequencer")
 			return &newPayloadResult{err: err}
 		}
