@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"cosmossdk.io/api/cosmos/crypto/secp256k1"
 	routertypes "github.com/0xElder/elder/x/router/types"
@@ -212,14 +213,14 @@ func ExtractErrorFromQueryResponse(responseData []byte) error {
 		return err
 	}
 
-	elderErr := fmt.Errorf(elderInvalidResp.Message)
-	if routertypes.ErrInvalidStartBlockHeight.Is(elderErr) {
+	message := elderInvalidResp.Message
+	if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidStartBlockHeight.ABCICode())) {
 		return ErrElderBlockHeightLessThanStart
-	} else if routertypes.ErrInvalidEndBlockHeight.Is(elderErr) {
+	} else if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidEndBlockHeight.ABCICode())) {
 		return ErrElderBlockHeighMoreThanCurrent
-	} else if routertypes.ErrRollNotEnabled.Is(elderErr) {
+	} else if strings.Contains(message, fmt.Sprint(routertypes.ErrRollNotEnabled.ABCICode())) {
 		return ErrRollupIDNotAvailable
 	} else {
-		return fmt.Errorf("unknown error %v", elderErr)
+		return fmt.Errorf("unknown error %v", message)
 	}
 }

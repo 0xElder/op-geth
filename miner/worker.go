@@ -585,7 +585,7 @@ func (w *worker) mainLoop() {
 		case req := <-w.getWorkCh:
 			for {
 				work := w.generateWork(req.params)
-				if work != nil && (work.err != errUnableToQueryElder || work.err == errBlockInterruptedByElder) {
+				if work != nil && (work.err != errUnableToQueryElder || work.err != errBlockInterruptedByElder) {
 					req.result <- work
 					break
 				}
@@ -1222,7 +1222,7 @@ func (w *worker) queryFromElder() (*types.ElderGetTxByBlockResponse, error) {
 	}
 
 	err = json.Unmarshal(responseData, &elderResp)
-	if reflect.DeepEqual(elderResp, &types.ElderGetTxByBlockResponse{}) || err != nil {
+	if elderResp == nil || reflect.DeepEqual(elderResp, &types.ElderGetTxByBlockResponse{}) || err != nil {
 		return nil, types.ExtractErrorFromQueryResponse(responseData)
 	}
 
