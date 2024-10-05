@@ -24,6 +24,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -590,8 +591,8 @@ func (w *worker) mainLoop() {
 				}
 
 				log.Error("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
-				log.Info("Retrying...")
-				time.Sleep(500 * time.Millisecond)
+				log.Info("Retrying...", "duration", w.config.NewPayloadTimeout)
+				time.Sleep(w.config.NewPayloadTimeout)
 			}
 
 		case ev := <-w.txsCh:
@@ -1213,7 +1214,7 @@ func (w *worker) queryFromElder() (*types.ElderGetTxByBlockResponse, error) {
 	}
 
 	err = json.Unmarshal(responseData, &elderResp)
-	if err != nil {
+	if reflect.DeepEqual(elderResp, &types.ElderGetTxByBlockResponse{}) || err != nil {
 		return nil, types.ExtractErrorFromQueryResponse(responseData)
 	}
 
