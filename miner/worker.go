@@ -1190,12 +1190,12 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 
 // Query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
-func (w *worker) queryFromElder() (types.ElderGetTxByBlockResponse, error) {
+func (w *worker) queryFromElder() (*types.ElderGetTxByBlockResponse, error) {
 	elderResp := &types.ElderGetTxByBlockResponse{}
 
 	baseUrl := w.elderSeqURL
 	if baseUrl == "" {
-		return types.ElderGetTxByBlockResponse{}, errors.New("elder seq url not set")
+		return nil, errors.New("elder seq url not set")
 	}
 
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
@@ -1204,34 +1204,20 @@ func (w *worker) queryFromElder() (types.ElderGetTxByBlockResponse, error) {
 	response, err := http.Get(url)
 	if err != nil {
 		fmt.Println("Failed to query elder sequencer", "err", err)
-		return types.ElderGetTxByBlockResponse{}, err
+		return nil, err
 	}
 
 	responseData, err := io.ReadAll(response.Body)
 	if err != nil {
-		return types.ElderGetTxByBlockResponse{}, err
+		return nil, err
 	}
 
-	elderInvalidResp := &types.ElderGetTxByBlockResponseInvalid{}
 	err = json.Unmarshal(responseData, &elderResp)
 	if err != nil {
-		err := json.Unmarshal(responseData, &elderInvalidResp)
-		if err != nil {
-			return types.ElderGetTxByBlockResponse{}, err
-		}
-		switch elderInvalidResp.Code {
-		case types.ElderBlockHeightLessThanStart:
-			return types.ElderGetTxByBlockResponse{}, types.ErrElderBlockHeightLessThanStart
-		case types.ElderBlockHeighMoreThanCurrent:
-			return types.ElderGetTxByBlockResponse{}, types.ErrElderBlockHeighMoreThanCurrent
-		case types.RollupIDNotAvailable:
-			return types.ElderGetTxByBlockResponse{}, types.ErrRollupIDNotAvailable
-		default:
-			return types.ElderGetTxByBlockResponse{}, errors.New("unknown error")
-		}
+		return nil, types.ExtractErrorFromQueryResponse(responseData)
 	}
 
-	return *elderResp, nil
+	return elderResp, nil
 }
 
 // fillTransactions retrieves the pending transactions from the txpool and fills them
@@ -1255,7 +1241,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			}
 		}
 
-		fmt.Println("Received txs from elder", "resp", resp)
+		fmt.Println("Received txs from elder", "resp", resp, "err", err)
 
 		txs, err := types.TxsStringToTxs(resp.Txs.TxList)
 		if err != nil {
@@ -1364,22 +1350,24 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 
 		err := w.fillTransactions(interrupt, work)
 		timer.Stop() // don't need timeout interruption any more
-		switch err {
-		case errBlockInterruptedByTimeout:
-			log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
-		case errBlockInterruptedByResolve:
-			log.Info("Block building got interrupted by payload resolution")
-		case errBlockInterruptedByElder:
-			log.Debug("Block building got interrupted by elder sequencer")
-			return &newPayloadResult{err: err}
-		case errUnableToQueryElder:
-			log.Warn("Failed to query elder sequencer")
-			return &newPayloadResult{err: err}
-		case errBlockInterruptedByElder:
-			log.Warn("Block height more than current block in Elder")
-			return &newPayloadResult{err: err}
-		default:
-			log.Warn("Failed to fill transactions", "err", err)
+		if err != nil {
+			switch err {
+			case errBlockInterruptedByTimeout:
+				log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
+			case errBlockInterruptedByResolve:
+				log.Info("Block building got interrupted by payload resolution")
+			case errBlockInterruptedByElder:
+				log.Debug("Block building got interrupted by elder sequencer")
+				return &newPayloadResult{err: err}
+			case errUnableToQueryElder:
+				log.Warn("Failed to query elder sequencer")
+				return &newPayloadResult{err: err}
+			case errBlockInterruptedByElder:
+				log.Warn("Block height more than current block in Elder")
+				return &newPayloadResult{err: err}
+			default:
+				log.Warn("Failed to fill transactions", "err", err)
+			}
 		}
 	}
 	if intr := genParams.interrupt; intr != nil && genParams.isUpdate && intr.Load() != commitInterruptNone {
