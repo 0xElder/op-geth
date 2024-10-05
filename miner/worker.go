@@ -584,14 +584,14 @@ func (w *worker) mainLoop() {
 		case req := <-w.getWorkCh:
 			for {
 				work := w.generateWork(req.params)
-				if work != nil && work.err != errUnableToQueryElder {
+				if work != nil && (work.err != errUnableToQueryElder || work.err == errBlockInterruptedByElder) {
 					req.result <- work
 					break
 				}
 
-				log.Error("Chain halt: elder unavailable, please check the elder URL")
-				log.Info("Retrying in 5 seconds")
-				time.Sleep(5 * time.Second)
+				log.Error("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
+				log.Info("Retrying...")
+				time.Sleep(500 * time.Millisecond)
 			}
 
 		case ev := <-w.txsCh:
@@ -1245,17 +1245,17 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			case types.ErrElderBlockHeightLessThanStart:
 				log.Info("Block height less than elder start block, building normal block")
 				goto legacy
-			case types.ErrElderBlockHeighMoreThanCurrent:
-				log.Info("Block height more than current block in Elder")
-				return errBlockInterruptedByElder
 			case types.ErrRollupIDNotAvailable:
 				log.Warn("Rollup ID not available")
 				goto legacy
+			case types.ErrElderBlockHeighMoreThanCurrent:
+				return errBlockInterruptedByElder
 			default:
-				log.Warn("Failed to query elder sequencer", "err", err)
 				return errUnableToQueryElder
 			}
 		}
+
+		fmt.Println("Received txs from elder", "resp", resp)
 
 		txs, err := types.TxsStringToTxs(resp.Txs.TxList)
 		if err != nil {
@@ -1364,13 +1364,22 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 
 		err := w.fillTransactions(interrupt, work)
 		timer.Stop() // don't need timeout interruption any more
-		if errors.Is(err, errBlockInterruptedByTimeout) {
+		switch err {
+		case errBlockInterruptedByTimeout:
 			log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
-		} else if errors.Is(err, errBlockInterruptedByResolve) {
+		case errBlockInterruptedByResolve:
 			log.Info("Block building got interrupted by payload resolution")
-		} else if errors.Is(err, errBlockInterruptedByElder) || errors.Is(err, errUnableToQueryElder) {
+		case errBlockInterruptedByElder:
 			log.Debug("Block building got interrupted by elder sequencer")
 			return &newPayloadResult{err: err}
+		case errUnableToQueryElder:
+			log.Warn("Failed to query elder sequencer")
+			return &newPayloadResult{err: err}
+		case errBlockInterruptedByElder:
+			log.Warn("Block height more than current block in Elder")
+			return &newPayloadResult{err: err}
+		default:
+			log.Warn("Failed to fill transactions", "err", err)
 		}
 	}
 	if intr := genParams.interrupt; intr != nil && genParams.isUpdate && intr.Load() != commitInterruptNone {
