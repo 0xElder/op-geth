@@ -593,6 +593,14 @@ func (w *worker) mainLoop() {
 				log.Error("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
 				log.Info("Retrying...", "duration", w.config.NewPayloadTimeout)
 				time.Sleep(w.config.NewPayloadTimeout)
+
+				// If node is stopped then we need to return to allow node to exit gracefully
+				select {
+				case <-w.exitCh:
+					return
+				default:
+					continue
+				}
 			}
 
 		case ev := <-w.txsCh:
