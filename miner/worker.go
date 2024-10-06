@@ -585,7 +585,7 @@ func (w *worker) mainLoop() {
 		case req := <-w.getWorkCh:
 			for {
 				work := w.generateWork(req.params)
-				if work != nil && (work.err != errUnableToQueryElder || work.err != errBlockInterruptedByElder) {
+				if work != nil && !(work.err == errUnableToQueryElder || work.err == errBlockInterruptedByElder) {
 					req.result <- work
 					break
 				}
