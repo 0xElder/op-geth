@@ -583,17 +583,21 @@ func (w *worker) mainLoop() {
 			w.commitWork(req.interrupt, req.timestamp)
 
 		case req := <-w.getWorkCh:
+			counter := 0
 			for {
+				counter++
 				work := w.generateWork(req.params)
 				if work != nil && !(work.err == errUnableToQueryElder || work.err == errBlockInterruptedByElder) {
 					req.result <- work
 					break
 				}
 
-				retryDuration := time.Duration(w.config.NewPayloadTimeout.Milliseconds()/4) * time.Millisecond
-				log.Warn("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
-				log.Info("Retrying...", "duration", retryDuration)
-				time.Sleep(retryDuration)
+				if counter > 10 {
+					retryDuration := time.Duration(w.config.NewPayloadTimeout.Milliseconds()/4) * time.Millisecond
+					log.Error("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
+					log.Info("Retrying...", "duration", retryDuration)
+					time.Sleep(retryDuration)
+				}
 
 				// If node is stopped then we need to return to allow node to exit gracefully
 				select {
