@@ -1208,7 +1208,9 @@ func (w *worker) queryFromElder() (*types.ElderGetTxByBlockResponse, error) {
 	}
 
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
-	url := fmt.Sprintf("%s/0xElder/elder/router/tx_by_block/%d/%d", baseUrl, w.elderRollID, currBlock)
+
+	// currBlock + 1 because we want to query the next block
+	url := fmt.Sprintf("%s/0xElder/elder/router/tx_by_block/%d/%d", baseUrl, w.elderRollID, currBlock+1)
 
 	response, err := http.Get(url)
 	if err != nil {
