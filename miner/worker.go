@@ -592,13 +592,13 @@ func (w *worker) mainLoop() {
 					break
 				}
 
+				retryDuration := time.Duration(w.config.NewPayloadTimeout.Milliseconds()/4) * time.Millisecond
 				// Don't print error before retrying for some time, 10s in case of 2s block time
 				if counter > 20 {
-					retryDuration := time.Duration(w.config.NewPayloadTimeout.Milliseconds()/4) * time.Millisecond
 					log.Error("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
 					log.Info("Retrying...", "duration", retryDuration)
-					time.Sleep(retryDuration)
 				}
+				time.Sleep(retryDuration)
 
 				// If node is stopped then we need to return to allow node to exit gracefully
 				select {
