@@ -592,7 +592,8 @@ func (w *worker) mainLoop() {
 					break
 				}
 
-				if counter > 10 {
+				// Don't print error before retrying for some time, 10s in case of 2s block time
+				if counter > 20 {
 					retryDuration := time.Duration(w.config.NewPayloadTimeout.Milliseconds()/4) * time.Millisecond
 					log.Error("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
 					log.Info("Retrying...", "duration", retryDuration)
@@ -1371,7 +1372,7 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 			case errBlockInterruptedByResolve:
 				log.Info("Block building got interrupted by payload resolution")
 			case errBlockInterruptedByElder:
-				log.Warn("Block building got interrupted by elder sequencer")
+				log.Debug("Block building got interrupted by elder sequencer")
 				return &newPayloadResult{err: err}
 			case errUnableToQueryElder:
 				log.Warn("Failed to query elder sequencer")
