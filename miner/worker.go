@@ -1250,8 +1250,6 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			}
 		}
 
-		fmt.Println("Received txs from elder", "resp", resp, "err", err)
-
 		txs, err := types.TxsStringToTxs(resp.Txs.TxList)
 		if err != nil {
 			log.Crit("Failed to convert txs to bytes", "err", err)
@@ -1366,13 +1364,10 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 			case errBlockInterruptedByResolve:
 				log.Info("Block building got interrupted by payload resolution")
 			case errBlockInterruptedByElder:
-				log.Debug("Block building got interrupted by elder sequencer")
+				log.Warn("Block building got interrupted by elder sequencer")
 				return &newPayloadResult{err: err}
 			case errUnableToQueryElder:
 				log.Warn("Failed to query elder sequencer")
-				return &newPayloadResult{err: err}
-			case errBlockInterruptedByElder:
-				log.Warn("Block height more than current block in Elder")
 				return &newPayloadResult{err: err}
 			default:
 				log.Warn("Failed to fill transactions", "err", err)
