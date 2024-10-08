@@ -905,7 +905,7 @@ func (w *worker) commitElderTransactions(env *environment, elderInnerTxs []*type
 		// }
 
 		if tx.IsElderDoubleSignedInnerTx() {
-			from, err := w.current.signer.Sender(tx)
+			from, err := env.signer.Sender(tx)
 			if err != nil {
 				log.Crit("Failed to get sender", "err", err)
 			}
