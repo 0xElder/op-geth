@@ -18,9 +18,13 @@ package miner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -82,6 +86,8 @@ var (
 	errBlockInterruptedByRecommit = errors.New("recommit interrupt while building block")
 	errBlockInterruptedByTimeout  = errors.New("timeout while building block")
 	errBlockInterruptedByResolve  = errors.New("payload resolution while building block")
+	errBlockInterruptedByElder    = errors.New("elder sequencer aborting building block")
+	errUnableToQueryElder         = errors.New("unable to query elder sequencer, chain halt")
 )
 
 // environment is the worker's current environment and holds all
@@ -245,32 +251,44 @@ type worker struct {
 	skipSealHook func(*task) bool                   // Method to decide whether skipping the sealing.
 	fullTaskHook func()                             // Method to call before pushing the full sealing task.
 	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
+
+	elderSequencerEnabled bool
+	elderSeqURL           string
+	elderRollID           uint64
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(header *types.Header) bool, init bool) *worker {
 	worker := &worker{
-		config:             config,
-		chainConfig:        chainConfig,
-		engine:             engine,
-		eth:                eth,
-		chain:              eth.BlockChain(),
-		mux:                mux,
-		isLocalBlock:       isLocalBlock,
-		coinbase:           config.Etherbase,
-		extra:              config.ExtraData,
-		tip:                uint256.MustFromBig(config.GasPrice),
-		pendingTasks:       make(map[common.Hash]*task),
-		txsCh:              make(chan core.NewTxsEvent, txChanSize),
-		chainHeadCh:        make(chan core.ChainHeadEvent, chainHeadChanSize),
-		newWorkCh:          make(chan *newWorkReq),
-		getWorkCh:          make(chan *getWorkReq),
-		taskCh:             make(chan *task),
-		resultCh:           make(chan *types.Block, resultQueueSize),
-		startCh:            make(chan struct{}, 1),
-		exitCh:             make(chan struct{}),
-		resubmitIntervalCh: make(chan time.Duration),
-		resubmitAdjustCh:   make(chan *intervalAdjust, resubmitAdjustChanSize),
+		config:                config,
+		chainConfig:           chainConfig,
+		engine:                engine,
+		eth:                   eth,
+		chain:                 eth.BlockChain(),
+		mux:                   mux,
+		isLocalBlock:          isLocalBlock,
+		coinbase:              config.Etherbase,
+		extra:                 config.ExtraData,
+		tip:                   uint256.MustFromBig(config.GasPrice),
+		pendingTasks:          make(map[common.Hash]*task),
+		txsCh:                 make(chan core.NewTxsEvent, txChanSize),
+		chainHeadCh:           make(chan core.ChainHeadEvent, chainHeadChanSize),
+		newWorkCh:             make(chan *newWorkReq),
+		getWorkCh:             make(chan *getWorkReq),
+		taskCh:                make(chan *task),
+		resultCh:              make(chan *types.Block, resultQueueSize),
+		startCh:               make(chan struct{}, 1),
+		exitCh:                make(chan struct{}),
+		resubmitIntervalCh:    make(chan time.Duration),
+		resubmitAdjustCh:      make(chan *intervalAdjust, resubmitAdjustChanSize),
+		elderSequencerEnabled: config.ElderSequencerEnabled,
+		elderSeqURL:           config.ElderSeqURL,
+		elderRollID:           config.ElderRollID,
 	}
+
+	if worker.config.ElderSequencerEnabled && (worker.elderSeqURL == "" || worker.elderRollID == 0) {
+		log.Crit("Elder sequencer enabled but no URL/RollID specified", "url", worker.elderSeqURL, "rollID", worker.elderRollID)
+	}
+
 	// Subscribe for transaction insertion events (whether from network or resurrects)
 	worker.txsSub = eth.TxPool().SubscribeTransactions(worker.txsCh, true)
 	// Subscribe events for blockchain
@@ -565,10 +583,34 @@ func (w *worker) mainLoop() {
 			w.commitWork(req.interrupt, req.timestamp)
 
 		case req := <-w.getWorkCh:
-			req.result <- w.generateWork(req.params)
+			counter := 0
+			for {
+				counter++
+				work := w.generateWork(req.params)
+				if work != nil && !(work.err == errUnableToQueryElder || work.err == errBlockInterruptedByElder) {
+					req.result <- work
+					break
+				}
+
+				retryDuration := time.Duration(w.config.NewPayloadTimeout.Milliseconds()/4) * time.Millisecond
+				// Don't print error before retrying for some time, 10s in case of 2s block time
+				if counter > 20 {
+					log.Error("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
+					log.Info("Retrying...", "duration", retryDuration)
+				}
+				time.Sleep(retryDuration)
+
+				// If node is stopped then we need to return to allow node to exit gracefully
+				select {
+				case <-w.exitCh:
+					return
+				default:
+					continue
+				}
+			}
 
 		case ev := <-w.txsCh:
-			if w.chainConfig.Optimism != nil && !w.config.RollupComputePendingBlock {
+			if (w.chainConfig.Optimism != nil && !w.config.RollupComputePendingBlock) || w.elderSequencerEnabled {
 				continue // don't update the pending-block snapshot if we are not computing the pending block
 			}
 			// Apply transactions to the pending state if we're not sealing
@@ -846,6 +888,64 @@ func (w *worker) applyTransaction(env *environment, tx *types.Transaction) (*typ
 	return receipt, err
 }
 
+func (w *worker) commitElderTransactions(env *environment, elderInnerTxs []*types.Transaction, interrupt *atomic.Int32) error {
+	gasLimit := env.header.GasLimit
+	if env.gasPool == nil {
+		env.gasPool = new(core.GasPool).AddGas(gasLimit)
+	}
+	var coalescedLogs []*types.Log
+
+	for _, tx := range elderInnerTxs {
+		// TODO :: 0xsharma : Check interruption signal and abort building if it's fired.
+		// // Check interruption signal and abort building if it's fired.
+		// if interrupt != nil {
+		// 	if signal := interrupt.Load(); signal != commitInterruptNone {
+		// 		return signalToErr(signal)
+		// 	}
+		// }
+
+		if tx.IsElderDoubleSignedInnerTx() {
+			from, err := env.signer.Sender(tx)
+			if err != nil {
+				log.Crit("Failed to get sender", "err", err)
+			}
+			reqNonce := env.state.GetNonce(from)
+			if reqNonce != tx.Nonce() {
+				tx.SetElderStatus(false)
+			}
+		}
+
+		// Start executing the transaction
+		env.state.SetTxContext(tx.Hash(), env.tcount)
+
+		logs, err := w.commitTransaction(env, tx)
+		switch {
+		case errors.Is(err, nil):
+			// Everything ok, collect the logs and shift in the next transaction from the same account
+			coalescedLogs = append(coalescedLogs, logs...)
+			env.tcount++
+		default:
+			log.Crit("Unexpected error during elder transaction execution", "err", err)
+		}
+	}
+	if !w.isRunning() && len(coalescedLogs) > 0 {
+		// We don't push the pendingLogsEvent while we are sealing. The reason is that
+		// when we are sealing, the worker will regenerate a sealing block every 3 seconds.
+		// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
+
+		// make a copy, the state caches the logs and these logs get "upgraded" from pending to mined
+		// logs by filling in the block hash when the block was mined by the local miner. This can
+		// cause a race condition if a log was "upgraded" before the PendingLogsEvent is processed.
+		cpy := make([]*types.Log, len(coalescedLogs))
+		for i, l := range coalescedLogs {
+			cpy[i] = new(types.Log)
+			*cpy[i] = *l
+		}
+		w.pendingLogsFeed.Send(cpy)
+	}
+	return nil
+}
+
 func (w *worker) commitTransactions(env *environment, plainTxs, blobTxs *transactionsByPriceAndNonce, interrupt *atomic.Int32) error {
 	gasLimit := env.header.GasLimit
 	if env.gasPool == nil {
@@ -1103,10 +1203,74 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	return env, nil
 }
 
+// Query the elder sequencer for the latest block
+// if the elder sequencer is not available, the query will fail
+func (w *worker) queryFromElder() (*types.ElderGetTxByBlockResponse, error) {
+	elderResp := &types.ElderGetTxByBlockResponse{}
+
+	baseUrl := w.elderSeqURL
+	if baseUrl == "" {
+		return nil, errors.New("elder seq url not set")
+	}
+
+	currBlock := w.chain.CurrentBlock().Number.Uint64()
+
+	// currBlock + 1 because we want to query the next block
+	url := fmt.Sprintf("%s/0xElder/elder/router/tx_by_block/%d/%d", baseUrl, w.elderRollID, currBlock+1)
+
+	response, err := http.Get(url)
+	if err != nil {
+		fmt.Println("Failed to query elder sequencer", "err", err)
+		return nil, err
+	}
+
+	responseData, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(responseData, &elderResp)
+	if elderResp == nil || reflect.DeepEqual(elderResp, &types.ElderGetTxByBlockResponse{}) || err != nil {
+		return nil, types.ExtractErrorFromQueryResponse(responseData)
+	}
+
+	return elderResp, nil
+}
+
 // fillTransactions retrieves the pending transactions from the txpool and fills them
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
+	if w.elderSequencerEnabled {
+		resp, err := w.queryFromElder()
+		if err != nil {
+			switch err {
+			case types.ErrElderBlockHeightLessThanStart:
+				log.Info("Block height less than elder start block, building normal block")
+				goto legacy
+			case types.ErrRollupIDNotAvailable:
+				log.Warn("Rollup ID not available")
+				goto legacy
+			case types.ErrElderBlockHeighMoreThanCurrent:
+				return errBlockInterruptedByElder
+			default:
+				return errUnableToQueryElder
+			}
+		}
+
+		txs, err := types.TxsStringToTxs(resp.Txs.TxList)
+		if err != nil {
+			log.Crit("Failed to convert txs to bytes", "err", err)
+			return err
+		}
+		if err := w.commitElderTransactions(env, txs, interrupt); err != nil {
+			log.Crit("Failed to commit elder transactions", "err", err)
+			return err
+		}
+		return nil
+	}
+
+legacy:
 	w.mu.RLock()
 	tip := w.tip
 	w.mu.RUnlock()
@@ -1201,10 +1365,21 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 
 		err := w.fillTransactions(interrupt, work)
 		timer.Stop() // don't need timeout interruption any more
-		if errors.Is(err, errBlockInterruptedByTimeout) {
-			log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
-		} else if errors.Is(err, errBlockInterruptedByResolve) {
-			log.Info("Block building got interrupted by payload resolution")
+		if err != nil {
+			switch err {
+			case errBlockInterruptedByTimeout:
+				log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
+			case errBlockInterruptedByResolve:
+				log.Info("Block building got interrupted by payload resolution")
+			case errBlockInterruptedByElder:
+				log.Debug("Block building got interrupted by elder sequencer")
+				return &newPayloadResult{err: err}
+			case errUnableToQueryElder:
+				log.Warn("Failed to query elder sequencer")
+				return &newPayloadResult{err: err}
+			default:
+				log.Warn("Failed to fill transactions", "err", err)
+			}
 		}
 	}
 	if intr := genParams.interrupt; intr != nil && genParams.isUpdate && intr.Load() != commitInterruptNone {

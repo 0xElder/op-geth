@@ -505,6 +505,25 @@ var (
 		Category: flags.MinerCategory,
 	}
 
+	// Elder Flags
+	ElderSequencerEnabledFlag = &cli.BoolFlag{
+		Name:     "elder-seq",
+		Usage:    "Flag to enable the Elder sequencer",
+		Value:    ethconfig.Defaults.Miner.ElderSequencerEnabled,
+		Category: flags.MiscCategory,
+	}
+	ElderSeqURLFlag = &cli.StringFlag{
+		Name:     "elder-seq-url",
+		Usage:    "URL of the Elder sequencer",
+		Category: flags.MiscCategory,
+	}
+	ElderRollIDFlag = &cli.Uint64Flag{
+		Name:     "elder-roll-id",
+		Usage:    "ID of the Elder sequencer",
+		Value:    0,
+		Category: flags.MiscCategory,
+	}
+
 	// Account settings
 	UnlockedAccountFlag = &cli.StringFlag{
 		Name:     "unlock",
@@ -1634,6 +1653,15 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	}
 	if ctx.IsSet(RollupComputePendingBlock.Name) {
 		cfg.RollupComputePendingBlock = ctx.Bool(RollupComputePendingBlock.Name)
+	}
+	if ctx.IsSet(ElderSequencerEnabledFlag.Name) {
+		cfg.ElderSequencerEnabled = ctx.Bool(ElderSequencerEnabledFlag.Name)
+	}
+	if ctx.IsSet(ElderSeqURLFlag.Name) {
+		cfg.ElderSeqURL = ctx.String(ElderSeqURLFlag.Name)
+	}
+	if ctx.IsSet(ElderRollIDFlag.Name) {
+		cfg.ElderRollID = ctx.Uint64(ElderRollIDFlag.Name)
 	}
 }
 

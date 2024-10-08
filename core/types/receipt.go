@@ -70,6 +70,9 @@ type Receipt struct {
 	BlobGasUsed       uint64         `json:"blobGasUsed,omitempty"`
 	BlobGasPrice      *big.Int       `json:"blobGasPrice,omitempty"`
 
+	// ElderOuterTx contains the outer transaction that wraps this inner transaction. It is required to verify the signatures as outer tx is the signed tx.
+	ElderOuterTx []byte `json:"elderOuterTx,omitempty"`
+
 	// DepositNonce was introduced in Regolith to store the actual nonce used by deposit transactions
 	// The state transition process ensures this is only set for Regolith deposit transactions.
 	DepositNonce *uint64 `json:"depositNonce,omitempty"`
@@ -116,6 +119,9 @@ type receiptMarshaling struct {
 	L1BlobBaseFeeScalar   *hexutil.Uint64
 	DepositNonce          *hexutil.Uint64
 	DepositReceiptVersion *hexutil.Uint64
+
+	// Elder
+	ElderOuterTx []byte
 }
 
 // receiptRLP is the consensus encoding of a receipt.
@@ -140,6 +146,15 @@ type depositReceiptRLP struct {
 	DepositReceiptVersion *uint64 `rlp:"optional"`
 }
 
+type elderReceiptRLP struct {
+	PostStateOrStatus []byte
+	CumulativeGasUsed uint64
+	Bloom             Bloom
+	Logs              []*Log
+
+	ElderOuterTx []byte
+}
+
 // storedReceiptRLP is the storage encoding of a receipt.
 type storedReceiptRLP struct {
 	PostStateOrStatus []byte
@@ -152,6 +167,9 @@ type storedReceiptRLP struct {
 	// DepositNonce. Post Canyon, receipts will have a non-empty DepositReceiptVersion indicating
 	// which post-Canyon receipt hash function to invoke.
 	DepositReceiptVersion *uint64 `rlp:"optional"`
+
+	// Elder
+	ElderOuterTx []byte `rlp:"optional"`
 }
 
 // LegacyOptimismStoredReceiptRLP is the pre bedrock storage encoding of a
@@ -259,6 +277,8 @@ func (r *Receipt) encodeTyped(data *receiptRLP, w *bytes.Buffer) error {
 	case DepositTxType:
 		withNonce := &depositReceiptRLP{data.PostStateOrStatus, data.CumulativeGasUsed, data.Bloom, data.Logs, r.DepositNonce, r.DepositReceiptVersion}
 		return rlp.Encode(w, withNonce)
+	case ElderInnerTxType:
+		return rlp.Encode(w, &elderReceiptRLP{data.PostStateOrStatus, data.CumulativeGasUsed, data.Bloom, data.Logs, r.ElderOuterTx})
 	default:
 		return rlp.Encode(w, data)
 	}
@@ -347,6 +367,15 @@ func (r *Receipt) decodeTyped(b []byte) error {
 		r.DepositNonce = data.DepositNonce
 		r.DepositReceiptVersion = data.DepositReceiptVersion
 		return r.setFromRLP(receiptRLP{data.PostStateOrStatus, data.CumulativeGasUsed, data.Bloom, data.Logs})
+	case ElderInnerTxType:
+		var data elderReceiptRLP
+		err := rlp.DecodeBytes(b[1:], &data)
+		if err != nil {
+			return err
+		}
+		r.Type = b[0]
+		r.ElderOuterTx = data.ElderOuterTx
+		return r.setFromRLP(receiptRLP{data.PostStateOrStatus, data.CumulativeGasUsed, data.Bloom, data.Logs})
 	default:
 		return ErrTxTypeNotSupported
 	}
@@ -416,6 +445,9 @@ func (r *ReceiptForStorage) EncodeRLP(_w io.Writer) error {
 			w.WriteUint64(*r.DepositReceiptVersion)
 		}
 	}
+	if r.ElderOuterTx != nil {
+		w.WriteBytes(r.ElderOuterTx)
+	}
 	w.ListEnd(outerList)
 	return w.Flush()
 }
@@ -480,6 +512,9 @@ func decodeStoredReceiptRLP(r *ReceiptForStorage, blob []byte) error {
 		r.DepositNonce = stored.DepositNonce
 		r.DepositReceiptVersion = stored.DepositReceiptVersion
 	}
+	if stored.ElderOuterTx != nil {
+		r.ElderOuterTx = stored.ElderOuterTx
+	}
 	return nil
 }
 
@@ -511,6 +546,10 @@ func (rs Receipts) EncodeIndex(i int, w *bytes.Buffer) {
 			rlp.Encode(w, depositData)
 		} else {
 			rlp.Encode(w, data)
+		}
+	case ElderInnerTxType:
+		if r.ElderOuterTx != nil {
+			rlp.Encode(w, &elderReceiptRLP{data.PostStateOrStatus, data.CumulativeGasUsed, r.Bloom, r.Logs, r.ElderOuterTx})
 		}
 	default:
 		// For unsupported types, write nothing. Since this is for

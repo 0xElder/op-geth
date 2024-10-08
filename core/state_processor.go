@@ -111,7 +111,8 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 	evm.Reset(txContext, statedb)
 
 	nonce := tx.Nonce()
-	if msg.IsDepositTx && config.IsOptimismRegolith(evm.Context.Time) {
+
+	if (msg.IsDepositTx && config.IsOptimismRegolith(evm.Context.Time)) || (msg.IsElderInnerTx && !msg.IsElderDoubleSignedInnerTx) {
 		nonce = statedb.GetNonce(msg.From)
 	}
 
@@ -156,6 +157,11 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 		receipt.BlobGasUsed = uint64(len(tx.BlobHashes()) * params.BlobTxBlobGasPerBlob)
 		receipt.BlobGasPrice = evm.Context.BlobBaseFee
 	}
+
+	// TODO :: 0xsharma : ElderOuterTx not visibile in tx receipt
+	// if tx.Type() == types.ElderInnerTxType {
+	// 	receipt.ElderOuterTx = tx.ElderOuterTx()
+	// }
 
 	// If the transaction created a contract, store the creation address in the receipt.
 	if msg.To == nil {

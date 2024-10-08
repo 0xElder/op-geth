@@ -213,6 +213,8 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		inner = new(BlobTx)
 	case DepositTxType:
 		inner = new(DepositTx)
+	case ElderInnerTxType:
+		inner = new(ElderInnerTx)
 	default:
 		return nil, ErrTxTypeNotSupported
 	}
@@ -354,6 +356,44 @@ func (tx *Transaction) IsDepositTx() bool {
 	return tx.Type() == DepositTxType
 }
 
+// IsElderInnerTx returns true if the transaction is a deposit tx type.
+func (tx *Transaction) IsElderInnerTx() bool {
+	return tx.Type() == ElderInnerTxType
+}
+
+func (tx *Transaction) ElderOuterTx() []byte {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderOuterTx
+	}
+	return []byte{}
+}
+
+// IsElderDoubleSignedInnerTx returns true if the elder tx (cosmos tx) contains a signed eth tx
+func (tx *Transaction) IsElderDoubleSignedInnerTx() bool {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		v, r, s := txData.rawSignatureValues()
+		if v == nil || r == nil || s == nil {
+			return false
+		}
+		return true
+	}
+
+	return false
+}
+
+func (tx *Transaction) ElderStatus() bool {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderStatus
+	}
+	return false
+}
+
+func (tx *Transaction) SetElderStatus(status bool) {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		txData.ElderStatus = status
+	}
+}
+
 // IsSystemTx returns true for deposits that are system transactions. These transactions
 // are executed in an unmetered environment & do not contribute to the block gas limit.
 func (tx *Transaction) IsSystemTx() bool {
@@ -372,7 +412,7 @@ func (tx *Transaction) Cost() *big.Int {
 
 // RollupCostData caches the information needed to efficiently compute the data availability fee
 func (tx *Transaction) RollupCostData() RollupCostData {
-	if tx.Type() == DepositTxType {
+	if tx.Type() == DepositTxType || tx.Type() == ElderInnerTxType {
 		return RollupCostData{}
 	}
 	if v := tx.rollupCostData.Load(); v != nil {
@@ -418,7 +458,7 @@ func (tx *Transaction) GasTipCapIntCmp(other *big.Int) int {
 // Note: if the effective gasTipCap is negative, this method returns both error
 // the actual negative value, _and_ ErrGasFeeCapTooLow
 func (tx *Transaction) EffectiveGasTip(baseFee *big.Int) (*big.Int, error) {
-	if tx.Type() == DepositTxType {
+	if tx.Type() == DepositTxType || tx.Type() == ElderInnerTxType {
 		return new(big.Int), nil
 	}
 	if baseFee == nil {
@@ -551,6 +591,20 @@ func (tx *Transaction) Hash() common.Hash {
 	var h common.Hash
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
+	} else if tx.Type() == ElderInnerTxType {
+		if !tx.IsElderDoubleSignedInnerTx() {
+			h = prefixedRlpHash(tx.Type(), tx.inner)
+		} else {
+			if !tx.ElderStatus() {
+				h = prefixedRlpHash(tx.Type(), tx.inner)
+			} else {
+				origTx, _, _, err := ElderTxToEthTx(tx.ElderOuterTx())
+				if err != nil {
+					log.Crit("failed to decode elder outer tx", "err", err)
+				}
+				h = origTx.Hash()
+			}
+		}
 	} else {
 		h = prefixedRlpHash(tx.Type(), tx.inner)
 	}
