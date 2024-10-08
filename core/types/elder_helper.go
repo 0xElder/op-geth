@@ -3,21 +3,17 @@ package types
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"cosmossdk.io/api/cosmos/crypto/secp256k1"
-	routerTypes "github.com/0xElder/elder/x/router/types"
-	elderTx "github.com/cosmos/cosmos-sdk/types/tx"
+	routertypes "github.com/0xElder/elder/x/router/types"
+	eldertx "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-)
-
-const (
-	ElderBlockHeightLessThanStart  = 1110
-	ElderBlockHeighMoreThanCurrent = 1111
-	RollupIDNotAvailable           = 2
 )
 
 var (
@@ -68,8 +64,8 @@ func Base64toBytes(in string) ([]byte, error) {
 	return out, nil
 }
 
-func BytesToCosmosTx(rawTxBytes []byte) (*elderTx.Tx, error) {
-	var tx elderTx.Tx
+func BytesToCosmosTx(rawTxBytes []byte) (*eldertx.Tx, error) {
+	var tx eldertx.Tx
 
 	err := tx.Unmarshal(rawTxBytes)
 	if err != nil {
@@ -89,7 +85,7 @@ func ElderTxToEthTx(rawElderTxBytes []byte) (*Transaction, uint64, string, error
 	accPublicKey := elderTx.AuthInfo.SignerInfos[0].PublicKey.Value
 	accPublicKeyStr := hex.EncodeToString(accPublicKey)
 
-	cosmMessage := &routerTypes.MsgSubmitRollTx{}
+	cosmMessage := &routertypes.MsgSubmitRollTx{}
 	err = proto.Unmarshal(elderTx.Body.Messages[0].Value, cosmMessage)
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("invalid transaction3 %+v: %v", elderTx, err)
@@ -121,7 +117,10 @@ func ElderTxToElderInnerTx(rawElderTxBytes []byte) (*Transaction, error) {
 func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint64, accPublicKeyStr string) (*Transaction, error) {
 	v, r, s := tx.RawSignatureValues()
 	nonce := tx.Nonce()
-	if !tx.IsElderDoubleSignedInnerTx() {
+
+	// If the transaction is not signed, set the nonce to 0
+	// keep nonce unchanged for double signed tx
+	if v == nil || r == nil || s == nil {
 		nonce = 0
 	}
 
@@ -208,4 +207,23 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 	}
 
 	return common.HexToAddress(ethAddr), nil
+}
+
+func ExtractErrorFromQueryResponse(responseData []byte) error {
+	elderInvalidResp := &ElderGetTxByBlockResponseInvalid{}
+	err := json.Unmarshal(responseData, &elderInvalidResp)
+	if err != nil {
+		return err
+	}
+
+	message := elderInvalidResp.Message
+	if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidStartBlockHeight.ABCICode())) {
+		return ErrElderBlockHeightLessThanStart
+	} else if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidEndBlockHeight.ABCICode())) {
+		return ErrElderBlockHeighMoreThanCurrent
+	} else if strings.Contains(message, fmt.Sprint(routertypes.ErrRollNotEnabled.ABCICode())) {
+		return ErrRollupIDNotAvailable
+	} else {
+		return fmt.Errorf("unknown error %v", message)
+	}
 }

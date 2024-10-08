@@ -24,6 +24,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -86,6 +87,7 @@ var (
 	errBlockInterruptedByTimeout  = errors.New("timeout while building block")
 	errBlockInterruptedByResolve  = errors.New("payload resolution while building block")
 	errBlockInterruptedByElder    = errors.New("elder sequencer aborting building block")
+	errUnableToQueryElder         = errors.New("unable to query elder sequencer, chain halt")
 )
 
 // environment is the worker's current environment and holds all
@@ -581,7 +583,31 @@ func (w *worker) mainLoop() {
 			w.commitWork(req.interrupt, req.timestamp)
 
 		case req := <-w.getWorkCh:
-			req.result <- w.generateWork(req.params)
+			counter := 0
+			for {
+				counter++
+				work := w.generateWork(req.params)
+				if work != nil && !(work.err == errUnableToQueryElder || work.err == errBlockInterruptedByElder) {
+					req.result <- work
+					break
+				}
+
+				retryDuration := time.Duration(w.config.NewPayloadTimeout.Milliseconds()/4) * time.Millisecond
+				// Don't print error before retrying for some time, 10s in case of 2s block time
+				if counter > 20 {
+					log.Error("Chain halt: elder unavailable or yet to sequence rollapp block, please check the elder URL")
+					log.Info("Retrying...", "duration", retryDuration)
+				}
+				time.Sleep(retryDuration)
+
+				// If node is stopped then we need to return to allow node to exit gracefully
+				select {
+				case <-w.exitCh:
+					return
+				default:
+					continue
+				}
+			}
 
 		case ev := <-w.txsCh:
 			if (w.chainConfig.Optimism != nil && !w.config.RollupComputePendingBlock) || w.elderSequencerEnabled {
@@ -879,7 +905,7 @@ func (w *worker) commitElderTransactions(env *environment, elderInnerTxs []*type
 		// }
 
 		if tx.IsElderDoubleSignedInnerTx() {
-			from, err := w.current.signer.Sender(tx)
+			from, err := env.signer.Sender(tx)
 			if err != nil {
 				log.Crit("Failed to get sender", "err", err)
 			}
@@ -1179,48 +1205,36 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 
 // Query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
-func (w *worker) queryFromElder() (types.ElderGetTxByBlockResponse, error) {
+func (w *worker) queryFromElder() (*types.ElderGetTxByBlockResponse, error) {
 	elderResp := &types.ElderGetTxByBlockResponse{}
 
 	baseUrl := w.elderSeqURL
 	if baseUrl == "" {
-		return types.ElderGetTxByBlockResponse{}, errors.New("elder seq url not set")
+		return nil, errors.New("elder seq url not set")
 	}
 
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
-	url := fmt.Sprintf("%s/0xElder/elder/router/tx_by_block/%d/%d", baseUrl, w.elderRollID, currBlock)
+
+	// currBlock + 1 because we want to query the next block
+	url := fmt.Sprintf("%s/0xElder/elder/router/tx_by_block/%d/%d", baseUrl, w.elderRollID, currBlock+1)
 
 	response, err := http.Get(url)
 	if err != nil {
 		fmt.Println("Failed to query elder sequencer", "err", err)
-		return types.ElderGetTxByBlockResponse{}, err
+		return nil, err
 	}
 
 	responseData, err := io.ReadAll(response.Body)
 	if err != nil {
-		return types.ElderGetTxByBlockResponse{}, err
+		return nil, err
 	}
 
-	elderInvalidResp := &types.ElderGetTxByBlockResponseInvalid{}
 	err = json.Unmarshal(responseData, &elderResp)
-	if err != nil {
-		err := json.Unmarshal(responseData, &elderInvalidResp)
-		if err != nil {
-			return types.ElderGetTxByBlockResponse{}, err
-		}
-		switch elderInvalidResp.Code {
-		case types.ElderBlockHeightLessThanStart:
-			return types.ElderGetTxByBlockResponse{}, types.ErrElderBlockHeightLessThanStart
-		case types.ElderBlockHeighMoreThanCurrent:
-			return types.ElderGetTxByBlockResponse{}, types.ErrElderBlockHeighMoreThanCurrent
-		case types.RollupIDNotAvailable:
-			return types.ElderGetTxByBlockResponse{}, types.ErrRollupIDNotAvailable
-		default:
-			return types.ElderGetTxByBlockResponse{}, errors.New("unknown error")
-		}
+	if elderResp == nil || reflect.DeepEqual(elderResp, &types.ElderGetTxByBlockResponse{}) || err != nil {
+		return nil, types.ExtractErrorFromQueryResponse(responseData)
 	}
 
-	return *elderResp, nil
+	return elderResp, nil
 }
 
 // fillTransactions retrieves the pending transactions from the txpool and fills them
@@ -1234,15 +1248,13 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			case types.ErrElderBlockHeightLessThanStart:
 				log.Info("Block height less than elder start block, building normal block")
 				goto legacy
-			case types.ErrElderBlockHeighMoreThanCurrent:
-				log.Info("Block height more than current block in Elder")
-				return errBlockInterruptedByElder
 			case types.ErrRollupIDNotAvailable:
 				log.Warn("Rollup ID not available")
 				goto legacy
-			default:
-				log.Warn("Failed to query elder sequencer", "err", err)
+			case types.ErrElderBlockHeighMoreThanCurrent:
 				return errBlockInterruptedByElder
+			default:
+				return errUnableToQueryElder
 			}
 		}
 
@@ -1353,13 +1365,21 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 
 		err := w.fillTransactions(interrupt, work)
 		timer.Stop() // don't need timeout interruption any more
-		if errors.Is(err, errBlockInterruptedByTimeout) {
-			log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
-		} else if errors.Is(err, errBlockInterruptedByResolve) {
-			log.Info("Block building got interrupted by payload resolution")
-		} else if errors.Is(err, errBlockInterruptedByElder) {
-			log.Debug("Block building got interrupted by elder sequencer")
-			return &newPayloadResult{err: err}
+		if err != nil {
+			switch err {
+			case errBlockInterruptedByTimeout:
+				log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
+			case errBlockInterruptedByResolve:
+				log.Info("Block building got interrupted by payload resolution")
+			case errBlockInterruptedByElder:
+				log.Debug("Block building got interrupted by elder sequencer")
+				return &newPayloadResult{err: err}
+			case errUnableToQueryElder:
+				log.Warn("Failed to query elder sequencer")
+				return &newPayloadResult{err: err}
+			default:
+				log.Warn("Failed to fill transactions", "err", err)
+			}
 		}
 	}
 	if intr := genParams.interrupt; intr != nil && genParams.isUpdate && intr.Load() != commitInterruptNone {
