@@ -1733,7 +1733,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 		}
 
 		// If roll is enabled, then check if the elder roll start block matches
-		if roll.Enabled && roll.StartBlock != cfg.ElderRollStartBlock {
+		if roll.Enabled && roll.RollStartBlock != cfg.ElderRollStartBlock {
 			Fatalf("Elder roll start block mismatch: %d != %d", roll.RollStartBlock, cfg.ElderRollStartBlock)
 		}
 
