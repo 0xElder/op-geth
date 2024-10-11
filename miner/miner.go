@@ -70,6 +70,7 @@ type Config struct {
 	ElderRollID           uint64            `json:"elder_roll_id"`
 	ElderRollStartBlock   uint64            `json:"elder_roll_start_block"`
 	ElderExecutorPk       secp256k1.PrivKey `json:"elder_executor_pk"`
+	ElderRollAppEnabled   bool              `json:"elder_roll_app_enabled"`
 }
 
 // DefaultConfig contains default settings for miner.

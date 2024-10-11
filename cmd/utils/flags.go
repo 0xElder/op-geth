@@ -1695,6 +1695,8 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Failed to query elder roll app: %v", err)
 		}
 
+		cfg.ElderRollAppEnabled = roll.Enabled
+
 		// If roll is not enabled, then the elder roll start block and executor pk must be set
 		if !roll.Enabled && (!ctx.IsSet(ElderRollStartBlockFlag.Name) || !ctx.IsSet(ElderExecutorPkFlag.Name)) {
 			Fatalf("Roll app is not enabled, but start block or executor pk is not set")

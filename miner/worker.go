@@ -258,34 +258,39 @@ type worker struct {
 	elderRollStartBlock        uint64
 	elderEnableRollAppCh       chan struct{}
 	elderEnableRollAppFailedCh chan struct{}
+	elderRollAppEnabled        bool
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(header *types.Header) bool, init bool) *worker {
 	worker := &worker{
-		config:                config,
-		chainConfig:           chainConfig,
-		engine:                engine,
-		eth:                   eth,
-		chain:                 eth.BlockChain(),
-		mux:                   mux,
-		isLocalBlock:          isLocalBlock,
-		coinbase:              config.Etherbase,
-		extra:                 config.ExtraData,
-		tip:                   uint256.MustFromBig(config.GasPrice),
-		pendingTasks:          make(map[common.Hash]*task),
-		txsCh:                 make(chan core.NewTxsEvent, txChanSize),
-		chainHeadCh:           make(chan core.ChainHeadEvent, chainHeadChanSize),
-		newWorkCh:             make(chan *newWorkReq),
-		getWorkCh:             make(chan *getWorkReq),
-		taskCh:                make(chan *task),
-		resultCh:              make(chan *types.Block, resultQueueSize),
-		startCh:               make(chan struct{}, 1),
-		exitCh:                make(chan struct{}),
-		resubmitIntervalCh:    make(chan time.Duration),
-		resubmitAdjustCh:      make(chan *intervalAdjust, resubmitAdjustChanSize),
-		elderSequencerEnabled: config.ElderSequencerEnabled,
-		elderGrpcClientConn:   config.ElderGrpcClientConn,
-		elderRollID:           config.ElderRollID,
+		config:                     config,
+		chainConfig:                chainConfig,
+		engine:                     engine,
+		eth:                        eth,
+		chain:                      eth.BlockChain(),
+		mux:                        mux,
+		isLocalBlock:               isLocalBlock,
+		coinbase:                   config.Etherbase,
+		extra:                      config.ExtraData,
+		tip:                        uint256.MustFromBig(config.GasPrice),
+		pendingTasks:               make(map[common.Hash]*task),
+		txsCh:                      make(chan core.NewTxsEvent, txChanSize),
+		chainHeadCh:                make(chan core.ChainHeadEvent, chainHeadChanSize),
+		newWorkCh:                  make(chan *newWorkReq),
+		getWorkCh:                  make(chan *getWorkReq),
+		taskCh:                     make(chan *task),
+		resultCh:                   make(chan *types.Block, resultQueueSize),
+		startCh:                    make(chan struct{}, 1),
+		exitCh:                     make(chan struct{}),
+		resubmitIntervalCh:         make(chan time.Duration),
+		resubmitAdjustCh:           make(chan *intervalAdjust, resubmitAdjustChanSize),
+		elderSequencerEnabled:      config.ElderSequencerEnabled,
+		elderGrpcClientConn:        config.ElderGrpcClientConn,
+		elderRollID:                config.ElderRollID,
+		elderRollStartBlock:        config.ElderRollStartBlock,
+		elderEnableRollAppCh:       make(chan struct{}, 1),
+		elderEnableRollAppFailedCh: make(chan struct{}, 1),
+		elderRollAppEnabled:        config.ElderRollAppEnabled,
 	}
 
 	if worker.config.ElderSequencerEnabled && (worker.elderGrpcClientConn == nil || worker.elderRollID == 0) {
@@ -582,19 +587,24 @@ func (w *worker) mainLoop() {
 	}()
 
 	for {
-		currentBlock := w.chain.CurrentBlock().Number.Uint64()
-		rollappStartBlock := w.elderRollStartBlock
+		if !w.config.ElderRollAppEnabled {
+			currentBlock := w.chain.CurrentBlock().Number.Uint64()
+			rollappStartBlock := w.elderRollStartBlock
 
-		if currentBlock == rollappStartBlock-1 {
-			go w.enableRollApp()
-		}
+			if currentBlock == rollappStartBlock-1 {
+				go w.enableRollApp()
+			}
 
-		if currentBlock == rollappStartBlock {
-			select {
-			case <-w.elderEnableRollAppCh:
-				log.Info("Roll App sequencing enabled on elder")
-			case <-w.elderEnableRollAppFailedCh:
-				panic("Unable to enable rollapp sequencing on elder")
+			if currentBlock == rollappStartBlock {
+				select {
+				case <-w.elderEnableRollAppCh:
+					log.Info("Roll App sequencing enabled on elder")
+					w.config.ElderRollAppEnabled = true
+				case <-w.elderEnableRollAppFailedCh:
+					log.Crit("Unable to enable rollapp sequencing on elder")
+					// todo: @anshalshukla - gracefully exit the node
+					panic("")
+				}
 			}
 		}
 
