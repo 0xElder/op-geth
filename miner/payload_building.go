@@ -255,13 +255,8 @@ func (payload *Payload) stopBuilding() {
 
 // buildPayload builds the payload according to the provided parameters.
 func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
-	elderSequencing := true
-	if w.elderRollStartBlock > w.chain.CurrentBlock().Number.Uint64() {
-		elderSequencing = false
-	}
-
 	// Following logic is specific to op, skip if elder sequencing is enabled
-	if args.NoTxPool && !elderSequencing { // don't start the background payload updating job if there is no tx pool to pull from
+	if args.NoTxPool && !w.elderRollAppEnabled { // don't start the background payload updating job if there is no tx pool to pull from
 		// Build the initial version with no transaction included. It should be fast
 		// enough to run. The empty payload can at least make sure there is something
 		// to deliver for not missing slot.

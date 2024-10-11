@@ -1260,8 +1260,10 @@ func (w *worker) queryFromElder() ([]string, error) {
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
-	if w.elderSequencerEnabled && w.elderRollStartBlock >= env.header.Number.Uint64() {
+	// if w.elderSequencerEnabled && w.elderRollAppEnabled {
+	if w.elderSequencerEnabled {
 		resp, err := w.queryFromElder()
+		fmt.Println("Anshal - querying elder - ", resp, "  ---  ", err)
 		if err != nil {
 			switch err {
 			case types.ErrElderBlockHeightLessThanStart:
