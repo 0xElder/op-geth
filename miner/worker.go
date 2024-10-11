@@ -1234,7 +1234,7 @@ func (w *worker) queryFromElder() ([]string, error) {
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
 
 	// currBlock + 1 because we want to query the next block
-	response, err := elderhelper.QueryElderForSeqencedBlock(w.config.ElderGrpcClientConn, w.config.ElderRollID, currBlock+1)
+	response, err := elderhelper.QueryElderForSeqencedBlock(w.config.ElderGrpcClientConn, w.config.ElderRollID, currBlock)
 	if err != nil {
 		fmt.Println("Failed to query elder sequencer", "err", err)
 		return nil, err
@@ -1242,7 +1242,7 @@ func (w *worker) queryFromElder() ([]string, error) {
 
 	// Elder yet to sequence block if
 	// requested roll app block > last sequenced roll app block on elder
-	if uint64(response.CurrentHeight) < currBlock+1 {
+	if uint64(response.CurrentHeight) < currBlock {
 		return nil, types.ErrElderBlockHeighMoreThanCurrent
 	}
 
@@ -1261,7 +1261,7 @@ func (w *worker) queryFromElder() ([]string, error) {
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
 	// checking roll start block with current chain status is necessary as rollapp might be syncing even when the rollapp is enabled
 	// enter into the statement even if w.config.ElderRollAppEnabled is false
-	if w.config.ElderSequencerEnabled && w.config.ElderRollStartBlock <= w.chain.CurrentBlock().Number.Uint64()+1 {
+	if w.config.ElderSequencerEnabled && w.config.ElderRollStartBlock <= w.chain.CurrentBlock().Number.Uint64() {
 		resp, err := w.queryFromElder()
 		if err != nil {
 			switch err {
