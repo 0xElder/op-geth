@@ -596,8 +596,6 @@ func (w *worker) mainLoop() {
 					w.config.ElderRollAppEnabled = true
 				case <-w.elderEnableRollAppFailedCh:
 					log.Crit("Unable to enable rollapp sequencing on elder")
-					// todo: @anshalshukla - gracefully exit the node
-					panic("")
 				}
 			}
 		}
@@ -1263,7 +1261,7 @@ func (w *worker) queryFromElder() ([]string, error) {
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
 	// checking roll start block with current chain status is necessary as rollapp might be syncing even when the rollapp is enabled
 	// enter into the statement even if w.config.ElderRollAppEnabled is false
-	if w.config.ElderSequencerEnabled && w.config.ElderRollStartBlock <= env.header.Number.Uint64() {
+	if w.config.ElderSequencerEnabled && w.config.ElderRollStartBlock <= w.chain.CurrentBlock().Number.Uint64() {
 		resp, err := w.queryFromElder()
 		if err != nil {
 			switch err {
