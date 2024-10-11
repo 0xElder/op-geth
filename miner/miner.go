@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -63,9 +64,11 @@ type Config struct {
 	RollupComputePendingBlock bool   // Compute the pending block from tx-pool, instead of copying the latest-block
 	EffectiveGasCeil          uint64 // if non-zero, a gas ceiling to apply independent of the header's gaslimit value
 
-	ElderSequencerEnabled bool   `json:"elder_sequencer_enabled"`
-	ElderSeqURL           string `json:"elder_seq_url"`
-	ElderRollID           uint64 `json:"elder_roll_id"`
+	ElderSequencerEnabled bool              `json:"elder_sequencer_enabled"`
+	ElderSeqURL           string            `json:"elder_seq_url"`
+	ElderRollID           uint64            `json:"elder_roll_id"`
+	ElderRollStartBlock   uint64            `json:"elder_roll_start_block"`
+	ElderExecutorPk       secp256k1.PrivKey `json:"elder_executor_pk"`
 }
 
 // DefaultConfig contains default settings for miner.

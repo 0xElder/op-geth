@@ -18,13 +18,10 @@ package miner
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
-	"net/http"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +42,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	elderhelper "github.com/ethereum/go-ethereum/core/types"
 )
 
 const (
@@ -252,9 +253,12 @@ type worker struct {
 	fullTaskHook func()                             // Method to call before pushing the full sealing task.
 	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
 
-	elderSequencerEnabled bool
-	elderSeqURL           string
-	elderRollID           uint64
+	elderSequencerEnabled      bool
+	elderSeqURL                string
+	elderRollID                uint64
+	elderRollStartBlock        uint64
+	elderEnableRollAppCh       chan struct{}
+	elderEnableRollAppFailedCh chan struct{}
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(header *types.Header) bool, init bool) *worker {
@@ -578,6 +582,22 @@ func (w *worker) mainLoop() {
 	}()
 
 	for {
+		currentBlock := w.chain.CurrentBlock().Number.Uint64()
+		rollappStartBlock := w.elderRollStartBlock
+
+		if currentBlock == rollappStartBlock-1 {
+			go w.enableRollApp()
+		}
+
+		if currentBlock == rollappStartBlock {
+			select {
+			case <-w.elderEnableRollAppCh:
+				log.Info("Roll App sequencing enabled on elder")
+			case <-w.elderEnableRollAppFailedCh:
+				panic("Unable to enable rollapp sequencing on elder")
+			}
+		}
+
 		select {
 		case req := <-w.newWorkCh:
 			w.commitWork(req.interrupt, req.timestamp)
@@ -1205,9 +1225,7 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 
 // Query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
-func (w *worker) queryFromElder() (*types.ElderGetTxByBlockResponse, error) {
-	elderResp := &types.ElderGetTxByBlockResponse{}
-
+func (w *worker) queryFromElder() ([]string, error) {
 	baseUrl := w.elderSeqURL
 	if baseUrl == "" {
 		return nil, errors.New("elder seq url not set")
@@ -1215,33 +1233,33 @@ func (w *worker) queryFromElder() (*types.ElderGetTxByBlockResponse, error) {
 
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
 
-	// currBlock + 1 because we want to query the next block
-	url := fmt.Sprintf("%s/0xElder/elder/router/tx_by_block/%d/%d", baseUrl, w.elderRollID, currBlock+1)
+	conn, err := grpc.NewClient(baseUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	defer conn.Close()
+	if err != nil {
+		return nil, errUnableToQueryElder
+	}
 
-	response, err := http.Get(url)
+	// currBlock + 1 because we want to query the next block
+	response, err := elderhelper.QueryElderForSeqencedBlock(conn, w.elderRollID, currBlock+1)
 	if err != nil {
 		fmt.Println("Failed to query elder sequencer", "err", err)
 		return nil, err
 	}
 
-	responseData, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
+	txList := response.Txs.TxList
+	var stringTxList []string
+	for _, tx := range txList {
+		stringTxList = append(stringTxList, hex.EncodeToString(tx))
 	}
 
-	err = json.Unmarshal(responseData, &elderResp)
-	if elderResp == nil || reflect.DeepEqual(elderResp, &types.ElderGetTxByBlockResponse{}) || err != nil {
-		return nil, types.ExtractErrorFromQueryResponse(responseData)
-	}
-
-	return elderResp, nil
+	return stringTxList, nil
 }
 
 // fillTransactions retrieves the pending transactions from the txpool and fills them
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
-	if w.elderSequencerEnabled {
+	if w.elderSequencerEnabled && w.elderRollStartBlock >= env.header.Number.Uint64() {
 		resp, err := w.queryFromElder()
 		if err != nil {
 			switch err {
@@ -1258,7 +1276,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			}
 		}
 
-		txs, err := types.TxsStringToTxs(resp.Txs.TxList)
+		txs, err := types.TxsStringToTxs(resp)
 		if err != nil {
 			log.Crit("Failed to convert txs to bytes", "err", err)
 			return err

@@ -255,9 +255,8 @@ func (payload *Payload) stopBuilding() {
 
 // buildPayload builds the payload according to the provided parameters.
 func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
-	_, err := w.queryFromElder()
 	elderSequencing := true
-	if err == types.ErrRollupIDNotAvailable || err == types.ErrElderBlockHeightLessThanStart {
+	if w.elderRollStartBlock > w.chain.CurrentBlock().Number.Uint64() {
 		elderSequencing = false
 	}
 
