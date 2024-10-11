@@ -86,6 +86,7 @@ var (
 	errBlockInterruptedByTimeout  = errors.New("timeout while building block")
 	errBlockInterruptedByResolve  = errors.New("payload resolution while building block")
 	errBlockInterruptedByElder    = errors.New("elder sequencer aborting building block")
+	errRollAppNotEnabledOnElder   = errors.New("rollapp sequencing not enabled on elder")
 	errUnableToQueryElder         = errors.New("unable to query elder sequencer, chain halt")
 )
 
@@ -608,7 +609,7 @@ func (w *worker) mainLoop() {
 			for {
 				counter++
 				work := w.generateWork(req.params)
-				if work != nil && !(work.err == errUnableToQueryElder || work.err == errBlockInterruptedByElder) {
+				if work != nil && !(work.err == errUnableToQueryElder || work.err == errBlockInterruptedByElder || work.err == errRollAppNotEnabledOnElder) {
 					req.result <- work
 					break
 				}
@@ -1227,6 +1228,9 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 // Query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
 func (w *worker) queryFromElder() ([]string, error) {
+	if !w.config.ElderRollAppEnabled {
+		return nil, types.ErrElderRollAppNotEnabled
+	}
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
 
 	// currBlock + 1 because we want to query the next block
@@ -1256,9 +1260,9 @@ func (w *worker) queryFromElder() ([]string, error) {
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
 	// checking roll start block with current chain status is necessary as rollapp might be syncing even when the rollapp is enabled
-	if w.config.ElderSequencerEnabled && w.config.ElderRollAppEnabled && w.config.ElderRollStartBlock <= env.header.Number.Uint64() {
+	// enter into the statement even if w.config.ElderRollAppEnabled is false
+	if w.config.ElderSequencerEnabled && w.config.ElderRollStartBlock <= env.header.Number.Uint64() {
 		resp, err := w.queryFromElder()
-		fmt.Println("Anshal - querying elder - ", resp, "  ---  ", err)
 		if err != nil {
 			switch err {
 			case types.ErrElderBlockHeightLessThanStart:
@@ -1269,6 +1273,8 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 				goto legacy
 			case types.ErrElderBlockHeighMoreThanCurrent:
 				return errBlockInterruptedByElder
+			case types.ErrElderRollAppNotEnabled:
+				return errRollAppNotEnabledOnElder
 			default:
 				return errUnableToQueryElder
 			}
@@ -1391,6 +1397,9 @@ func (w *worker) generateWork(genParams *generateParams) *newPayloadResult {
 				log.Info("Block building got interrupted by payload resolution")
 			case errBlockInterruptedByElder:
 				log.Debug("Block building got interrupted by elder sequencer")
+				return &newPayloadResult{err: err}
+			case errRollAppNotEnabledOnElder:
+				log.Warn("Roll app not enabled on elder")
 				return &newPayloadResult{err: err}
 			case errUnableToQueryElder:
 				log.Warn("Failed to query elder sequencer")
