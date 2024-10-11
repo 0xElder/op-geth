@@ -436,7 +436,9 @@ func (w *worker) isRunning() bool {
 func (w *worker) close() {
 	w.running.Store(false)
 	close(w.exitCh)
-	w.elderGrpcClientConn.Close()
+	if w.elderGrpcClientConn != nil {
+		w.elderGrpcClientConn.Close()
+	}
 	w.wg.Wait()
 }
 
