@@ -1280,6 +1280,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			log.Crit("Failed to convert txs to bytes", "err", err)
 			return err
 		}
+		log.Info("Filling elder transactions", "txs", len(txs))
 		if err := w.commitElderTransactions(env, txs, interrupt); err != nil {
 			log.Crit("Failed to commit elder transactions", "err", err)
 			return err
@@ -1322,6 +1323,7 @@ legacy:
 			localBlobTxs[account] = txs
 		}
 	}
+	log.Info("Filling transactions", "locals", len(localPlainTxs), "remotes", len(remotePlainTxs))
 	// Fill the block with all available pending transactions.
 	if len(localPlainTxs) > 0 || len(localBlobTxs) > 0 {
 		plainTxs := newTransactionsByPriceAndNonce(env.signer, localPlainTxs, env.header.BaseFee)
