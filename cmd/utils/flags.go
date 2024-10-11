@@ -1677,19 +1677,18 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Both ElderSeqURLFlag and ElderRollIDFlag must be set if elder sequencer is enabled")
 		}
 	}
-	if ctx.IsSet(ElderSeqURLFlag.Name) {
-		cfg.ElderSeqURL = ctx.String(ElderSeqURLFlag.Name)
-	}
 	if ctx.IsSet(ElderRollIDFlag.Name) {
 		cfg.ElderRollID = ctx.Uint64(ElderRollIDFlag.Name)
 	}
 
 	// Validity checks for elder sequencer, if enabled
 	if cfg.ElderSequencerEnabled {
-		conn, err := grpc.NewClient(cfg.ElderSeqURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(ctx.String(ElderSeqURLFlag.Name), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			Fatalf("Failed to connect to elder sequencer: %v", err)
 		}
+
+		cfg.ElderGrpcClientConn = conn
 
 		roll, err := elderhelper.QueryElderRollApp(conn, cfg.ElderRollID)
 		if err != nil {

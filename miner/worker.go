@@ -43,7 +43,6 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	elderhelper "github.com/ethereum/go-ethereum/core/types"
 )
@@ -254,7 +253,7 @@ type worker struct {
 	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
 
 	elderSequencerEnabled      bool
-	elderSeqURL                string
+	elderGrpcClientConn        *grpc.ClientConn
 	elderRollID                uint64
 	elderRollStartBlock        uint64
 	elderEnableRollAppCh       chan struct{}
@@ -285,12 +284,12 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus
 		resubmitIntervalCh:    make(chan time.Duration),
 		resubmitAdjustCh:      make(chan *intervalAdjust, resubmitAdjustChanSize),
 		elderSequencerEnabled: config.ElderSequencerEnabled,
-		elderSeqURL:           config.ElderSeqURL,
+		elderGrpcClientConn:   config.ElderGrpcClientConn,
 		elderRollID:           config.ElderRollID,
 	}
 
-	if worker.config.ElderSequencerEnabled && (worker.elderSeqURL == "" || worker.elderRollID == 0) {
-		log.Crit("Elder sequencer enabled but no URL/RollID specified", "url", worker.elderSeqURL, "rollID", worker.elderRollID)
+	if worker.config.ElderSequencerEnabled && (worker.elderGrpcClientConn == nil || worker.elderRollID == 0) {
+		log.Crit("Elder sequencer enabled but no Client/RollID specified", "rollID", worker.elderRollID)
 	}
 
 	// Subscribe for transaction insertion events (whether from network or resurrects)
@@ -432,6 +431,7 @@ func (w *worker) isRunning() bool {
 func (w *worker) close() {
 	w.running.Store(false)
 	close(w.exitCh)
+	w.elderGrpcClientConn.Close()
 	w.wg.Wait()
 }
 
@@ -1226,21 +1226,10 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 // Query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
 func (w *worker) queryFromElder() ([]string, error) {
-	baseUrl := w.elderSeqURL
-	if baseUrl == "" {
-		return nil, errors.New("elder seq url not set")
-	}
-
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
 
-	conn, err := grpc.NewClient(baseUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	defer conn.Close()
-	if err != nil {
-		return nil, errUnableToQueryElder
-	}
-
 	// currBlock + 1 because we want to query the next block
-	response, err := elderhelper.QueryElderForSeqencedBlock(conn, w.elderRollID, currBlock+1)
+	response, err := elderhelper.QueryElderForSeqencedBlock(w.elderGrpcClientConn, w.elderRollID, currBlock+1)
 	if err != nil {
 		fmt.Println("Failed to query elder sequencer", "err", err)
 		return nil, err
