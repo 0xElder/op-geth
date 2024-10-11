@@ -1236,6 +1236,22 @@ func (w *worker) queryFromElder() ([]string, error) {
 		return nil, err
 	}
 
+	if w.config.ElderStartBlock == 0 {
+		res, err := elderhelper.QueryElderRollApp(w.config.ElderGrpcClientConn, w.config.ElderRollID)
+		if err != nil {
+			fmt.Println("Failed to query elder roll app", "err", err)
+			return nil, err
+		}
+		w.config.ElderStartBlock = res.StartBlock
+	}
+
+	// Elder yet to sequence block if
+	// requested roll app block > last sequenced roll app block on elder
+	// (currBlock + 1) > uint64(response.CurrentHeight) - w.config.ElderStartBlock + w.config.ElderRollStartBlock
+	if response.CurrentHeight < int64(w.config.ElderStartBlock) || (uint64(response.CurrentHeight)-w.config.ElderStartBlock) < (currBlock+1-w.config.ElderRollStartBlock) {
+		return nil, types.ErrElderBlockHeighMoreThanCurrent
+	}
+
 	txList := response.Txs.TxList
 	var stringTxList []string
 	for _, tx := range txList {

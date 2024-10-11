@@ -1697,6 +1697,9 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 		}
 
 		cfg.ElderRollAppEnabled = roll.Enabled
+		if cfg.ElderRollAppEnabled {
+			cfg.ElderStartBlock = roll.StartBlock
+		}
 
 		// If roll is not enabled, then the elder roll start block and executor pk must be set
 		if !roll.Enabled && (!ctx.IsSet(ElderRollStartBlockFlag.Name) || !ctx.IsSet(ElderExecutorPkFlag.Name)) {
