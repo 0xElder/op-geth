@@ -42,7 +42,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
-	"google.golang.org/grpc"
 
 	elderhelper "github.com/ethereum/go-ethereum/core/types"
 )
@@ -252,13 +251,8 @@ type worker struct {
 	fullTaskHook func()                             // Method to call before pushing the full sealing task.
 	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
 
-	elderSequencerEnabled      bool
-	elderGrpcClientConn        *grpc.ClientConn
-	elderRollID                uint64
-	elderRollStartBlock        uint64
 	elderEnableRollAppCh       chan struct{}
 	elderEnableRollAppFailedCh chan struct{}
-	elderRollAppEnabled        bool
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(header *types.Header) bool, init bool) *worker {
@@ -284,17 +278,12 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus
 		exitCh:                     make(chan struct{}),
 		resubmitIntervalCh:         make(chan time.Duration),
 		resubmitAdjustCh:           make(chan *intervalAdjust, resubmitAdjustChanSize),
-		elderSequencerEnabled:      config.ElderSequencerEnabled,
-		elderGrpcClientConn:        config.ElderGrpcClientConn,
-		elderRollID:                config.ElderRollID,
-		elderRollStartBlock:        config.ElderRollStartBlock,
 		elderEnableRollAppCh:       make(chan struct{}, 1),
 		elderEnableRollAppFailedCh: make(chan struct{}, 1),
-		elderRollAppEnabled:        config.ElderRollAppEnabled,
 	}
 
-	if worker.config.ElderSequencerEnabled && (worker.elderGrpcClientConn == nil || worker.elderRollID == 0) {
-		log.Crit("Elder sequencer enabled but no Client/RollID specified", "rollID", worker.elderRollID)
+	if worker.config.ElderSequencerEnabled && (worker.config.ElderGrpcClientConn == nil || worker.config.ElderRollID == 0) {
+		log.Crit("Elder sequencer enabled but no Client/RollID specified", "rollID", worker.config.ElderRollID)
 	}
 
 	// Subscribe for transaction insertion events (whether from network or resurrects)
@@ -436,8 +425,8 @@ func (w *worker) isRunning() bool {
 func (w *worker) close() {
 	w.running.Store(false)
 	close(w.exitCh)
-	if w.elderGrpcClientConn != nil {
-		w.elderGrpcClientConn.Close()
+	if w.config.ElderGrpcClientConn != nil {
+		w.config.ElderGrpcClientConn.Close()
 	}
 	w.wg.Wait()
 }
@@ -591,7 +580,7 @@ func (w *worker) mainLoop() {
 	for {
 		if !w.config.ElderRollAppEnabled {
 			currentBlock := w.chain.CurrentBlock().Number.Uint64()
-			rollappStartBlock := w.elderRollStartBlock
+			rollappStartBlock := w.config.ElderRollStartBlock
 
 			if currentBlock == rollappStartBlock-1 {
 				go w.enableRollApp()
@@ -642,7 +631,7 @@ func (w *worker) mainLoop() {
 			}
 
 		case ev := <-w.txsCh:
-			if (w.chainConfig.Optimism != nil && !w.config.RollupComputePendingBlock) || w.elderSequencerEnabled {
+			if (w.chainConfig.Optimism != nil && !w.config.RollupComputePendingBlock) || w.config.ElderSequencerEnabled {
 				continue // don't update the pending-block snapshot if we are not computing the pending block
 			}
 			// Apply transactions to the pending state if we're not sealing
@@ -1241,7 +1230,7 @@ func (w *worker) queryFromElder() ([]string, error) {
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
 
 	// currBlock + 1 because we want to query the next block
-	response, err := elderhelper.QueryElderForSeqencedBlock(w.elderGrpcClientConn, w.elderRollID, currBlock+1)
+	response, err := elderhelper.QueryElderForSeqencedBlock(w.config.ElderGrpcClientConn, w.config.ElderRollID, currBlock+1)
 	if err != nil {
 		fmt.Println("Failed to query elder sequencer", "err", err)
 		return nil, err
@@ -1260,8 +1249,8 @@ func (w *worker) queryFromElder() ([]string, error) {
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
-	// if w.elderSequencerEnabled && w.elderRollAppEnabled {
-	if w.elderSequencerEnabled {
+	// checking roll start block with current chain status is necessary as rollapp might be syncing even when the rollapp is enabled
+	if w.config.ElderSequencerEnabled && w.config.ElderRollAppEnabled && w.config.ElderRollStartBlock <= env.header.Number.Uint64() {
 		resp, err := w.queryFromElder()
 		fmt.Println("Anshal - querying elder - ", resp, "  ---  ", err)
 		if err != nil {
