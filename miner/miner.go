@@ -68,7 +68,6 @@ type Config struct {
 	ElderSequencerEnabled bool              `json:"elder_sequencer_enabled"`
 	ElderGrpcClientConn   *grpc.ClientConn  `json:"elder_grpc_client_conn"`
 	ElderRollID           uint64            `json:"elder_roll_id"`
-	ElderStartBlock       uint64            `json:"elder_start_block"`
 	ElderRollStartBlock   uint64            `json:"elder_roll_start_block"`
 	ElderExecutorPk       secp256k1.PrivKey `json:"elder_executor_pk"`
 	ElderRollAppEnabled   bool              `json:"elder_roll_app_enabled"`
