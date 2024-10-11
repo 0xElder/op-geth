@@ -579,10 +579,12 @@ func (w *worker) mainLoop() {
 	}()
 
 	for {
+		fmt.Println("Anshal  main loop 1 - ", w.config.ElderRollAppEnabled)
 		if !w.config.ElderRollAppEnabled {
 			currentBlock := w.chain.CurrentBlock().Number.Uint64()
 			rollappStartBlock := w.config.ElderRollStartBlock
 
+			fmt.Println("Anshal  main loop 2- ", currentBlock, " ", rollappStartBlock)
 			if currentBlock == rollappStartBlock-1 {
 				go w.enableRollApp()
 			}
