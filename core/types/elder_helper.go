@@ -266,21 +266,21 @@ func BuildElderTxFromMsgAndBroadcast(conn *grpc.ClientConn, privateKey secp256k1
 
 	err := txBuilder.SetMsgs(msg)
 	if err != nil {
-		log.Warn("Failed to set message: %v\n", err)
+		log.Warn("Failed to set message", "err", err)
 		return "", err
 	}
 
 	// Sign the transaction
 	txBytes, err := signTx(conn, privateKey, txConfig, txBuilder)
 	if err != nil {
-		log.Warn("Failed to sign the transaction: %v\n", err)
+		log.Warn("Failed to sign the transaction", "err", err)
 		return "", err
 	}
 
 	// Simulate the transaction to estimate gas
 	gasEstimate, err := simulateElderTx(conn, txBytes)
 	if err != nil {
-		log.Warn("Failed to simulate the transaction: %v\n", err)
+		log.Warn("Failed to simulate the transaction", "err", err)
 		return "", err
 	}
 
@@ -307,14 +307,14 @@ func BuildElderTxFromMsgAndBroadcast(conn *grpc.ClientConn, privateKey secp256k1
 	// Sign the transaction
 	txBytes, err = signTx(conn, privateKey, txConfig, txBuilder)
 	if err != nil {
-		log.Warn("Failed to sign the transaction: %v\n", err)
+		log.Warn("Failed to sign the transaction", "err", err)
 		return "", err
 	}
 
 	// Broadcast the transaction
 	txResponse, err := broadcastElderTx(conn, txBytes)
 	if err != nil {
-		log.Warn("Failed to broadcast the transaction: %v\n", err)
+		log.Warn("Failed to broadcast the transaction", "err", err)
 		return "", err
 	}
 
@@ -329,7 +329,7 @@ func BuildElderTxFromMsgAndBroadcast(conn *grpc.ClientConn, privateKey secp256k1
 		time.Sleep(2 * time.Second)
 		tx, err := getElderTxFromHash(conn, txResponse.TxHash)
 		if count > 10 && err != nil {
-			return "", fmt.Errorf("Txn %s not found in elder block, err: %v", txResponse.TxHash, err)
+			return "", fmt.Errorf("Txn not found in elder block", "txHash", txResponse.TxHash, "err", err)
 		}
 		if tx != nil {
 			log.Info("Txn succeeded", "txHash", txResponse.TxHash)
@@ -353,7 +353,7 @@ func QueryElderForSeqencedBlock(conn *grpc.ClientConn, rollId, rollAppBlockNumbe
 
 	blockRes, err := routerClient.TxsByBlock(ctx, blockReq)
 	if err != nil {
-		log.Warn("Failed to fetch account info: %v\n", err)
+		log.Warn("Failed to fetch account info", "err", err)
 		return nil, err
 	}
 
@@ -372,7 +372,7 @@ func QueryElderRollApp(conn *grpc.ClientConn, rollId uint64) (*registrationtypes
 	// Fetch the roll app
 	rollRes, err := registrationClient.QueryRoll(ctx, rollReq)
 	if err != nil {
-		log.Warn("Failed to fetch roll app: %v\n", err)
+		log.Warn("Failed to fetch roll app", "err", err)
 		return nil, err
 	}
 
@@ -392,7 +392,7 @@ func QueryElderAccountBalance(conn *grpc.ClientConn, executorPk *secp256k1.PrivK
 
 	res, err := bankClient.Balance(ctx, &req)
 	if err != nil {
-		log.Warn("Failed to fetch balance: %v\n", err)
+		log.Warn("Failed to fetch balance", "err", err)
 		return &big.Int{}, err
 	}
 
@@ -404,7 +404,7 @@ func signTx(conn *grpc.ClientConn, privateKey secp256k1.PrivKey, txConfig client
 	// Account and sequence number: Fetch this from your chain (e.g., using gRPC)
 	accountNumber, sequenceNumber, err := queryElderAccount(conn, elderAddress)
 	if err != nil {
-		log.Warn("Failed to fetch account info: %v\n", err)
+		log.Warn("Failed to fetch account info", "err", err)
 		return []byte{}, err
 	}
 
@@ -428,7 +428,7 @@ func signTx(conn *grpc.ClientConn, privateKey secp256k1.PrivKey, txConfig client
 	}
 	err = txBuilder.SetSignatures(signatureV2)
 	if err != nil {
-		log.Warn("Failed to set signatures: %v\n", err)
+		log.Warn("Failed to set signatures", "err", err)
 		return []byte{}, err
 	}
 
@@ -443,20 +443,20 @@ func signTx(conn *grpc.ClientConn, privateKey secp256k1.PrivKey, txConfig client
 		sequenceNumber,
 	)
 	if err != nil {
-		log.Warn("Failed to sign the transaction: %v\n", err)
+		log.Warn("Failed to sign the transaction", "err", err)
 		return []byte{}, err
 	}
 
 	err = txBuilder.SetSignatures(signatureV2)
 	if err != nil {
-		log.Warn("Failed to set signatures: %v\n", err)
+		log.Warn("Failed to set signatures", "err", err)
 		return []byte{}, err
 	}
 
 	// Encode the transaction
 	txBytes, err := txConfig.TxEncoder()(txBuilder.GetTx())
 	if err != nil {
-		log.Warn("Failed to encode the transaction: %v\n", err)
+		log.Warn("Failed to encode the transaction", "err", err)
 		return []byte{}, err
 	}
 
@@ -471,7 +471,7 @@ func queryElderChainID(conn *grpc.ClientConn) string {
 
 	status, err := tmClient.GetNodeInfo(ctx, &cmtservice.GetNodeInfoRequest{})
 	if err != nil {
-		log.Warn("Failed to fetch chain info: %v\n", err)
+		log.Warn("Failed to fetch chain info", "err", err)
 	}
 
 	return status.DefaultNodeInfo.Network
@@ -489,7 +489,7 @@ func queryElderAccount(conn *grpc.ClientConn, address string) (uint64, uint64, e
 	}
 	accountRes, err := authClient.Account(ctx, accountReq)
 	if err != nil {
-		log.Warn("Failed to fetch account info: %v\n", err)
+		log.Warn("Failed to fetch account info", "err", err)
 		return 0, 0, err
 	}
 
@@ -497,7 +497,7 @@ func queryElderAccount(conn *grpc.ClientConn, address string) (uint64, uint64, e
 	var account authtypes.BaseAccount
 	err = account.Unmarshal(accountRes.Account.Value)
 	if err != nil {
-		log.Warn("Failed to unmarshal account info: %v\n", err)
+		log.Warn("Failed to unmarshal account info", "err", err)
 		return 0, 0, err
 	}
 
@@ -516,7 +516,7 @@ func queryElderRollMinTxFees(conn *grpc.ClientConn, rollId uint64) (uint64, erro
 	}
 	rollRes, err := registerClient.QueryRoll(ctx, rollReq)
 	if err != nil {
-		log.Warn("Failed to fetch roll registration: %v\n", err)
+		log.Warn("Failed to fetch roll registration", "err", err)
 		return 0, err
 	}
 
@@ -615,7 +615,7 @@ func CosmosPublicKeyToCosmosAddress(addressPrefix, publicKeyString string) strin
 	// Decode public key string
 	pubKeyBytes, err := hex.DecodeString(publicKeyString)
 	if err != nil {
-		log.Warn("Failed to decode public key hex: %v\n", err)
+		log.Warn("Failed to decode public key hex", "err", err)
 	}
 
 	// Hash pubKeyBytes as: RIPEMD160(SHA256(public_key_bytes))
