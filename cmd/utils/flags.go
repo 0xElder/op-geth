@@ -1673,7 +1673,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	}
 	if ctx.IsSet(ElderSequencerEnabledFlag.Name) {
 		cfg.ElderSequencerEnabled = ctx.Bool(ElderSequencerEnabledFlag.Name)
-		if !ctx.IsSet(ElderSeqURLFlag.Name) || !ctx.IsSet(ElderRollIDFlag.Name) {
+		if cfg.ElderSequencerEnabled && (!ctx.IsSet(ElderSeqURLFlag.Name) || !ctx.IsSet(ElderRollIDFlag.Name)) {
 			Fatalf("Both ElderSeqURLFlag and ElderRollIDFlag must be set if elder sequencer is enabled")
 		}
 	}
