@@ -256,7 +256,7 @@ func (payload *Payload) stopBuilding() {
 // buildPayload builds the payload according to the provided parameters.
 func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
 	elderSequencing := true
-	if w.current.header.Number.Uint64() < w.config.ElderRollStartBlock {
+	if w.chain.CurrentHeader().Number.Uint64() < w.config.ElderRollStartBlock {
 		elderSequencing = false
 	}
 	// Following logic is specific to op, skip if elder sequencing is enabled
