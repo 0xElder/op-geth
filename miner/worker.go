@@ -1248,6 +1248,11 @@ func (w *worker) queryFromElder() ([]string, error) {
 	// Elder yet to sequence block if
 	// requested roll app block > last sequenced roll app block on elder
 	// (currBlock + 1) > uint64(response.CurrentHeight) - w.config.ElderStartBlock + w.config.ElderRollStartBlock
+	fmt.Println("Anshal - current height ", response.CurrentHeight)
+	fmt.Println("Anshal - elder start block ", w.config.ElderStartBlock)
+	fmt.Println("Anshal - lhs ", (uint64(response.CurrentHeight) - w.config.ElderStartBlock))
+	fmt.Println("Anshal - rhs ", (currBlock + 1 - w.config.ElderRollStartBlock))
+
 	if response.CurrentHeight < int64(w.config.ElderStartBlock) || (uint64(response.CurrentHeight)-w.config.ElderStartBlock) < (currBlock+1-w.config.ElderRollStartBlock) {
 		return nil, types.ErrElderBlockHeighMoreThanCurrent
 	}
