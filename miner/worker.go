@@ -579,27 +579,6 @@ func (w *worker) mainLoop() {
 	}()
 
 	for {
-		fmt.Println("Anshal  main loop 1 - ", w.config.ElderRollAppEnabled)
-		if !w.config.ElderRollAppEnabled {
-			currentBlock := w.chain.CurrentBlock().Number.Uint64()
-			rollappStartBlock := w.config.ElderRollStartBlock
-
-			fmt.Println("Anshal  main loop 2- ", currentBlock, " ", rollappStartBlock)
-			if currentBlock == rollappStartBlock-1 {
-				go w.enableRollApp()
-			}
-
-			if currentBlock == rollappStartBlock {
-				select {
-				case <-w.elderEnableRollAppCh:
-					log.Info("Roll App sequencing enabled on elder")
-					w.config.ElderRollAppEnabled = true
-				case <-w.elderEnableRollAppFailedCh:
-					log.Crit("Unable to enable rollapp sequencing on elder")
-				}
-			}
-		}
-
 		select {
 		case req := <-w.newWorkCh:
 			w.commitWork(req.interrupt, req.timestamp)
@@ -1259,9 +1238,32 @@ func (w *worker) queryFromElder() ([]string, error) {
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
+	currentBlock := w.chain.CurrentBlock().Number.Uint64()
+	if !w.config.ElderRollAppEnabled {
+		rollappStartBlock := w.config.ElderRollStartBlock
+
+		if currentBlock == rollappStartBlock-1 {
+			go w.enableRollApp()
+		}
+
+		if currentBlock == rollappStartBlock {
+			select {
+			case <-w.elderEnableRollAppCh:
+				log.Info("Roll App sequencing enabled on elder")
+				w.config.ElderRollAppEnabled = true
+			case <-w.elderEnableRollAppFailedCh:
+				log.Crit("Unable to enable rollapp sequencing on elder")
+			}
+		}
+	}
+
+	if w.config.ElderSequencerEnabled && !w.config.ElderSequencerEnabled && currentBlock >= w.config.ElderRollStartBlock {
+		log.Crit("Roll app has passed start block, elder sequencer should be enabled")
+	}
+
 	// checking roll start block with current chain status is necessary as rollapp might be syncing even when the rollapp is enabled
 	// enter into the statement even if w.config.ElderRollAppEnabled is false
-	if w.config.ElderSequencerEnabled && w.config.ElderRollStartBlock <= w.chain.CurrentBlock().Number.Uint64() {
+	if w.config.ElderSequencerEnabled && w.config.ElderRollStartBlock <= currentBlock {
 		resp, err := w.queryFromElder()
 		if err != nil {
 			switch err {
