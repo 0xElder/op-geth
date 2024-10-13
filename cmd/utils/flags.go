@@ -1729,6 +1729,11 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			cfg.ElderExecutorPk = privateKey
 		}
 
+		// If roll is not enabled, then the elder registered executor for roll and executor pk must match
+		if !roll.Enabled && elderhelper.CosmosPublicKeyToCosmosAddress("elder", hex.EncodeToString(cfg.ElderExecutorPk.PubKey().Bytes())) != roll.Executor {
+			Fatalf("Executor pk does not match the roll app executor")
+		}
+
 		// If roll is enabled, then check if the elder roll start block matches
 		if roll.Enabled && roll.RollStartBlock != cfg.ElderRollStartBlock {
 			Fatalf("Elder roll start block mismatch: %d != %d", roll.RollStartBlock, cfg.ElderRollStartBlock)
