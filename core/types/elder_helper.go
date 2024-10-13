@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -237,14 +236,7 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 	return common.HexToAddress(ethAddr), nil
 }
 
-func ExtractErrorFromQueryResponse(responseData []byte) error {
-	elderInvalidResp := &ElderGetTxByBlockResponseInvalid{}
-	err := json.Unmarshal(responseData, &elderInvalidResp)
-	if err != nil {
-		return err
-	}
-
-	message := elderInvalidResp.Message
+func ExtractErrorFromQueryResponse(message string) error {
 	if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidStartBlockHeight.ABCICode())) {
 		return ErrElderBlockHeightLessThanStart
 	} else if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidEndBlockHeight.ABCICode())) {

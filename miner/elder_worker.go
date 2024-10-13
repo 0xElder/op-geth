@@ -42,7 +42,7 @@ func (w *worker) queryFromElder() ([]string, error) {
 
 	response, err := elderhelper.QueryElderForSeqencedBlock(w.config.ElderGrpcClientConn, w.config.ElderRollID, currBlock)
 	if err != nil {
-		return nil, err
+		return nil, types.ExtractErrorFromQueryResponse(err.Error())
 	}
 
 	// elder yet to sequence block if
