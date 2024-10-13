@@ -25,8 +25,6 @@ func (w *worker) enableRollApp() {
 	res, err := elderhelper.BuildElderTxFromMsgAndBroadcast(w.config.ElderGrpcClientConn, w.config.ElderExecutorPk, &msg)
 	if res == "" || err != nil {
 		log.Crit("Failed to enable rollapp sequencing in elder", "err", err)
-		w.elderEnableRollAppFailedCh <- struct{}{}
-		return
 	}
 
 	w.elderEnableRollAppCh <- struct{}{}
@@ -78,8 +76,6 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 			case <-w.elderEnableRollAppCh:
 				log.Info("Roll App sequencing enabled on elder")
 				w.config.ElderRollAppEnabled = true
-			case <-w.elderEnableRollAppFailedCh:
-				log.Crit("Unable to enable rollapp sequencing on elder")
 			}
 		}
 	}

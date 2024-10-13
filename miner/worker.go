@@ -249,35 +249,33 @@ type worker struct {
 	fullTaskHook func()                             // Method to call before pushing the full sealing task.
 	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
 
-	elderEnableRollAppCh       chan struct{}
-	elderEnableRollAppFailedCh chan struct{}
+	elderEnableRollAppCh chan struct{}
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(header *types.Header) bool, init bool) *worker {
 	worker := &worker{
-		config:                     config,
-		chainConfig:                chainConfig,
-		engine:                     engine,
-		eth:                        eth,
-		chain:                      eth.BlockChain(),
-		mux:                        mux,
-		isLocalBlock:               isLocalBlock,
-		coinbase:                   config.Etherbase,
-		extra:                      config.ExtraData,
-		tip:                        uint256.MustFromBig(config.GasPrice),
-		pendingTasks:               make(map[common.Hash]*task),
-		txsCh:                      make(chan core.NewTxsEvent, txChanSize),
-		chainHeadCh:                make(chan core.ChainHeadEvent, chainHeadChanSize),
-		newWorkCh:                  make(chan *newWorkReq),
-		getWorkCh:                  make(chan *getWorkReq),
-		taskCh:                     make(chan *task),
-		resultCh:                   make(chan *types.Block, resultQueueSize),
-		startCh:                    make(chan struct{}, 1),
-		exitCh:                     make(chan struct{}),
-		resubmitIntervalCh:         make(chan time.Duration),
-		resubmitAdjustCh:           make(chan *intervalAdjust, resubmitAdjustChanSize),
-		elderEnableRollAppCh:       make(chan struct{}, 1),
-		elderEnableRollAppFailedCh: make(chan struct{}, 1),
+		config:               config,
+		chainConfig:          chainConfig,
+		engine:               engine,
+		eth:                  eth,
+		chain:                eth.BlockChain(),
+		mux:                  mux,
+		isLocalBlock:         isLocalBlock,
+		coinbase:             config.Etherbase,
+		extra:                config.ExtraData,
+		tip:                  uint256.MustFromBig(config.GasPrice),
+		pendingTasks:         make(map[common.Hash]*task),
+		txsCh:                make(chan core.NewTxsEvent, txChanSize),
+		chainHeadCh:          make(chan core.ChainHeadEvent, chainHeadChanSize),
+		newWorkCh:            make(chan *newWorkReq),
+		getWorkCh:            make(chan *getWorkReq),
+		taskCh:               make(chan *task),
+		resultCh:             make(chan *types.Block, resultQueueSize),
+		startCh:              make(chan struct{}, 1),
+		exitCh:               make(chan struct{}),
+		resubmitIntervalCh:   make(chan time.Duration),
+		resubmitAdjustCh:     make(chan *intervalAdjust, resubmitAdjustChanSize),
+		elderEnableRollAppCh: make(chan struct{}, 1),
 	}
 
 	if worker.config.ElderSequencerEnabled && (worker.config.ElderGrpcClientConn == nil || worker.config.ElderRollID == 0) {
