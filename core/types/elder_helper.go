@@ -345,7 +345,6 @@ func QueryElderForSeqencedBlock(conn *grpc.ClientConn, rollId, rollAppBlockNumbe
 
 	blockRes, err := routerClient.TxsByBlock(ctx, blockReq)
 	if err != nil {
-		log.Warn("Failed to fetch account info", "err", err)
 		return nil, err
 	}
 
@@ -481,7 +480,6 @@ func queryElderAccount(conn *grpc.ClientConn, address string) (uint64, uint64, e
 	}
 	accountRes, err := authClient.Account(ctx, accountReq)
 	if err != nil {
-		log.Warn("Failed to fetch account info", "err", err)
 		return 0, 0, err
 	}
 
