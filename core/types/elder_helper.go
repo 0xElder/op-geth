@@ -615,7 +615,7 @@ func CosmosPublicKeyToCosmosAddress(addressPrefix, publicKeyString string) strin
 	// Decode public key string
 	pubKeyBytes, err := hex.DecodeString(publicKeyString)
 	if err != nil {
-		log.Warn("Failed to decode public key hex", "err", err)
+		log.Crit("Failed to decode public key hex", "err", err)
 	}
 
 	// Hash pubKeyBytes as: RIPEMD160(SHA256(public_key_bytes))

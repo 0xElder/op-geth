@@ -18,7 +18,6 @@ package miner
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -42,8 +41,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
-
-	elderhelper "github.com/ethereum/go-ethereum/core/types"
 )
 
 const (
@@ -1204,98 +1201,15 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	return env, nil
 }
 
-// Query the elder sequencer for the latest block
-// if the elder sequencer is not available, the query will fail
-func (w *worker) queryFromElder() ([]string, error) {
-	if !w.config.ElderRollAppEnabled {
-		return nil, types.ErrElderRollAppNotEnabled
-	}
-	currBlock := w.chain.CurrentBlock().Number.Uint64()
-
-	// currBlock + 1 because we want to query the next block
-	response, err := elderhelper.QueryElderForSeqencedBlock(w.config.ElderGrpcClientConn, w.config.ElderRollID, currBlock)
-	if err != nil {
-		fmt.Println("Failed to query elder sequencer", "err", err)
-		return nil, err
-	}
-
-	// Elder yet to sequence block if
-	// requested roll app block > last sequenced roll app block on elder
-	if uint64(response.CurrentHeight) < currBlock {
-		return nil, types.ErrElderBlockHeighMoreThanCurrent
-	}
-
-	txList := response.Txs.TxList
-	var stringTxList []string
-	for _, tx := range txList {
-		stringTxList = append(stringTxList, hex.EncodeToString(tx))
-	}
-
-	return stringTxList, nil
-}
-
 // fillTransactions retrieves the pending transactions from the txpool and fills them
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
 func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) error {
-	currentBlock := w.chain.CurrentBlock().Number.Uint64()
-	if !w.config.ElderRollAppEnabled {
-		rollappStartBlock := w.config.ElderRollStartBlock
-
-		if currentBlock == rollappStartBlock-1 {
-			go w.enableRollApp()
-		}
-
-		if currentBlock == rollappStartBlock {
-			select {
-			case <-w.elderEnableRollAppCh:
-				log.Info("Roll App sequencing enabled on elder")
-				w.config.ElderRollAppEnabled = true
-			case <-w.elderEnableRollAppFailedCh:
-				log.Crit("Unable to enable rollapp sequencing on elder")
-			}
-		}
+	isElder, err := w.fillElderTransactions(interrupt, env)
+	if isElder {
+		return err
 	}
 
-	if w.config.ElderSequencerEnabled && !w.config.ElderSequencerEnabled && currentBlock >= w.config.ElderRollStartBlock {
-		log.Crit("Roll app has passed start block, elder sequencer should be enabled")
-	}
-
-	// checking roll start block with current chain status is necessary as rollapp might be syncing even when the rollapp is enabled
-	// enter into the statement even if w.config.ElderRollAppEnabled is false
-	if w.config.ElderSequencerEnabled && w.config.ElderRollStartBlock <= currentBlock {
-		resp, err := w.queryFromElder()
-		if err != nil {
-			switch err {
-			case types.ErrElderBlockHeightLessThanStart:
-				log.Info("Block height less than elder start block, building normal block")
-				goto legacy
-			case types.ErrRollupIDNotAvailable:
-				log.Warn("Rollup ID not available")
-				goto legacy
-			case types.ErrElderBlockHeighMoreThanCurrent:
-				return errBlockInterruptedByElder
-			case types.ErrElderRollAppNotEnabled:
-				return errRollAppNotEnabledOnElder
-			default:
-				return errUnableToQueryElder
-			}
-		}
-
-		txs, err := types.TxsStringToTxs(resp)
-		if err != nil {
-			log.Crit("Failed to convert txs to bytes", "err", err)
-			return err
-		}
-		log.Info("Filling elder transactions", "txs", len(txs))
-		if err := w.commitElderTransactions(env, txs, interrupt); err != nil {
-			log.Crit("Failed to commit elder transactions", "err", err)
-			return err
-		}
-		return nil
-	}
-
-legacy:
 	w.mu.RLock()
 	tip := w.tip
 	w.mu.RUnlock()
