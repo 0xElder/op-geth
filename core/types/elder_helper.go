@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"os"
 	"strings"
 	"time"
 
@@ -280,13 +279,8 @@ func BuildElderTxFromMsgAndBroadcast(conn *grpc.ClientConn, privateKey secp256k1
 	gasAdjustment := 1.5
 	adjustedGas := uint64(float64(gasEstimate) * gasAdjustment)
 
-	// Set gas price
-	gp := os.Getenv("ELDER_GAS_PRICE")
-	var gasPrice float64
-	if gp == "" {
-		// default gas price
-		gasPrice = .01 * math.Pow(10, -6) // .01 uelder/gas
-	}
+	// default gas price
+	gasPrice := .01 * math.Pow(10, -6) // .01 uelder/gas
 
 	// Set a fee amount
 	feeAmount := cosmosmath.NewInt(int64(math.Ceil((float64(adjustedGas) * gasPrice))))
@@ -321,7 +315,7 @@ func BuildElderTxFromMsgAndBroadcast(conn *grpc.ClientConn, privateKey secp256k1
 		time.Sleep(2 * time.Second)
 		tx, err := getElderTxFromHash(conn, txResponse.TxHash)
 		if count > 10 && err != nil {
-			return "", fmt.Errorf("Txn not found in elder block", "txHash", txResponse.TxHash, "err", err)
+			return "", fmt.Errorf("Txn hash %v not found in elder block, err: %v", txResponse.TxHash, err)
 		}
 		if tx != nil {
 			log.Info("Txn succeeded", "txHash", txResponse.TxHash)
@@ -400,6 +394,9 @@ func signTx(conn *grpc.ClientConn, privateKey secp256k1.PrivKey, txConfig client
 	}
 
 	chainId := queryElderChainID(conn)
+	if chainId == "" {
+		return nil, errors.New("failed to fetch chain id")
+	}
 
 	signerData := authsigning.SignerData{
 		ChainID:       chainId,
@@ -462,7 +459,8 @@ func queryElderChainID(conn *grpc.ClientConn) string {
 
 	status, err := tmClient.GetNodeInfo(ctx, &cmtservice.GetNodeInfoRequest{})
 	if err != nil {
-		log.Warn("Failed to fetch chain info", "err", err)
+		log.Warn("Failed to fetch chain id", "err", err)
+		return ""
 	}
 
 	return status.DefaultNodeInfo.Network
