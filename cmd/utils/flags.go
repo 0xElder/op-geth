@@ -1692,7 +1692,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 		} else if len(elderUrl) > 8 && elderUrl[0:9] == "https://" {
 			elderUrl = elderUrl[9:]
 		}
-		conn, err := grpc.NewClient(ctx.String(ElderSeqURLFlag.Name), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(elderUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			Fatalf("Failed to connect to elder sequencer: %v, make sure the port mentioned is of gRPC server", err)
 		}
