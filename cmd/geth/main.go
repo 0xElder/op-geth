@@ -132,6 +132,8 @@ var (
 		utils.ElderSequencerEnabledFlag,
 		utils.ElderSeqURLFlag,
 		utils.ElderRollIDFlag,
+		utils.ElderRollStartBlockFlag,
+		utils.ElderExecutorPkFlag,
 		utils.NATFlag,
 		utils.NoDiscoverFlag,
 		utils.DiscoveryV4Flag,

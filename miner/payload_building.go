@@ -255,14 +255,13 @@ func (payload *Payload) stopBuilding() {
 
 // buildPayload builds the payload according to the provided parameters.
 func (w *worker) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
-	_, err := w.queryFromElder()
 	elderSequencing := true
-	if err == types.ErrRollupIDNotAvailable || err == types.ErrElderBlockHeightLessThanStart {
+	if w.chain.CurrentHeader().Number.Uint64() < w.config.ElderRollStartBlock {
 		elderSequencing = false
 	}
-
 	// Following logic is specific to op, skip if elder sequencing is enabled
-	if args.NoTxPool && !elderSequencing { // don't start the background payload updating job if there is no tx pool to pull from
+	// elderSequencing is necessary as rollapp might be syncing even when the rollapp is enabled
+	if args.NoTxPool && !w.config.ElderRollAppEnabled && !elderSequencing { // don't start the background payload updating job if there is no tx pool to pull from
 		// Build the initial version with no transaction included. It should be fast
 		// enough to run. The empty payload can at least make sure there is something
 		// to deliver for not missing slot.

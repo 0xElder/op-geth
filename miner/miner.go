@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -36,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"google.golang.org/grpc"
 )
 
 // Backend wraps all methods required for mining. Only full node is capable
@@ -63,9 +65,12 @@ type Config struct {
 	RollupComputePendingBlock bool   // Compute the pending block from tx-pool, instead of copying the latest-block
 	EffectiveGasCeil          uint64 // if non-zero, a gas ceiling to apply independent of the header's gaslimit value
 
-	ElderSequencerEnabled bool   `json:"elder_sequencer_enabled"`
-	ElderSeqURL           string `json:"elder_seq_url"`
-	ElderRollID           uint64 `json:"elder_roll_id"`
+	ElderSequencerEnabled bool              `json:"elder_sequencer_enabled"`
+	ElderGrpcClientConn   *grpc.ClientConn  `json:"elder_grpc_client_conn"`
+	ElderRollID           uint64            `json:"elder_roll_id"`
+	ElderRollStartBlock   uint64            `json:"elder_roll_start_block"`
+	ElderExecutorPk       secp256k1.PrivKey `json:"elder_executor_pk"`
+	ElderRollAppEnabled   bool              `json:"elder_roll_app_enabled"`
 }
 
 // DefaultConfig contains default settings for miner.
