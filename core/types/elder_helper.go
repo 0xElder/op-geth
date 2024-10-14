@@ -279,6 +279,7 @@ func BuildElderTxFromMsgAndBroadcast(conn *grpc.ClientConn, privateKey secp256k1
 	gasAdjustment := 1.5
 	adjustedGas := uint64(float64(gasEstimate) * gasAdjustment)
 
+	// todo: @anshalshukla - check if there is a better way to set gas price
 	// default gas price
 	gasPrice := .01 * math.Pow(10, -6) // .01 uelder/gas
 
@@ -622,12 +623,12 @@ func CosmosPublicKeyToCosmosAddress(addressPrefix, publicKeyString string) strin
 func toBech32(addrPrefix string, addrBytes []byte) string {
 	converted, err := bech32.ConvertBits(addrBytes, 8, 5, true)
 	if err != nil {
-		panic(err)
+		log.Crit("Failed to convert address bytes", "err", err)
 	}
 
 	addr, err := bech32.Encode(addrPrefix, converted)
 	if err != nil {
-		panic(err)
+		log.Crit("Failed to encode address", "err", err)
 	}
 
 	return addr
