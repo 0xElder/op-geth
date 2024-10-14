@@ -32,7 +32,7 @@ func (w *worker) enableRollApp() {
 
 // query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
-func (w *worker) queryFromElder() ([]string, error) {
+func (w *worker) queryFromElder() ([][]byte, error) {
 	if !w.config.ElderRollAppEnabled {
 		return nil, types.ErrElderRollAppNotEnabled
 	}
@@ -49,13 +49,7 @@ func (w *worker) queryFromElder() ([]string, error) {
 		return nil, types.ErrElderBlockHeighMoreThanCurrent
 	}
 
-	txList := response.Txs.TxList
-	var stringTxList []string
-	for _, tx := range txList {
-		stringTxList = append(stringTxList, hex.EncodeToString(tx))
-	}
-
-	return stringTxList, nil
+	return response.Txs.TxList, nil
 }
 
 // fillElderTransactions queries the transaction from elder sequencing after validation
@@ -105,7 +99,7 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 			}
 		}
 
-		txs, err := types.TxsStringToTxs(resp)
+		txs, err := types.TxsBytesToTxs(resp)
 		if err != nil {
 			log.Crit("Failed to convert txs to bytes", "err", err)
 		}
