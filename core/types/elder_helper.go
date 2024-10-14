@@ -63,15 +63,15 @@ type ElderGetTxByBlockResponseInvalid struct {
 	Details []interface{} `json:"details"`
 }
 
-func TxsStringToTxs(txs []string) ([]*Transaction, error) {
+func TxsStringToTxs(txs [][]byte) ([]*Transaction, error) {
 	elderInnerTxs := make([]*Transaction, len(txs))
 	for i, tx := range txs {
-		txBytes, err := Base64toBytes(tx)
-		if err != nil {
-			return []*Transaction{}, err
-		}
+		// txBytes, err := Base64toBytes(tx)
+		// if err != nil {
+		// 	return []*Transaction{}, err
+		// }
 
-		elderInnerTx, err := ElderTxToElderInnerTx(txBytes)
+		elderInnerTx, err := ElderTxToElderInnerTx(tx)
 		if err != nil {
 			return []*Transaction{}, err
 		}
