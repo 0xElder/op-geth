@@ -1684,9 +1684,17 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Both ElderSeqURLFlag and ElderRollIDFlag must be set if elder sequencer is enabled")
 		}
 
+		elderUrl := ctx.String(ElderSeqURLFlag.Name)
+		if elderUrl == "" {
+			Fatalf("Elder sequencer cannot be empty string")
+		} else if len(elderUrl) > 7 && elderUrl[0:8] == "http://" {
+			elderUrl = elderUrl[8:]
+		} else if len(elderUrl) > 8 && elderUrl[0:9] == "https://" {
+			elderUrl = elderUrl[9:]
+		}
 		conn, err := grpc.NewClient(ctx.String(ElderSeqURLFlag.Name), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			Fatalf("Failed to connect to elder sequencer: %v", err)
+			Fatalf("Failed to connect to elder sequencer: %v, make sure the port mentioned is of gRPC server", err)
 		}
 
 		cfg.ElderGrpcClientConn = conn
