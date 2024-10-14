@@ -63,14 +63,9 @@ type ElderGetTxByBlockResponseInvalid struct {
 	Details []interface{} `json:"details"`
 }
 
-func TxsStringToTxs(txs []string) ([]*Transaction, error) {
+func TxsBytesToTxs(txs [][]byte) ([]*Transaction, error) {
 	elderInnerTxs := make([]*Transaction, len(txs))
-	for i, tx := range txs {
-		txBytes, err := Base64toBytes(tx)
-		if err != nil {
-			return []*Transaction{}, err
-		}
-
+	for i, txBytes := range txs {
 		elderInnerTx, err := ElderTxToElderInnerTx(txBytes)
 		if err != nil {
 			return []*Transaction{}, err
@@ -563,7 +558,12 @@ func getElderTxFromHash(conn *grpc.ClientConn, txHash string) (*eldertx.Tx, erro
 	}
 
 	log.Info("Tx Response Code", "responseCode", grpcRes.TxResponse.Code)
-	log.Info("Tx will be included in block of the roll app", "rollAppBlock", rollAppBlock)
+
+	// relevant for elder-wrap, to tell where the txn will be included in the roll app
+	if rollAppBlock != "" {
+		log.Info("Tx will be included in block of the roll app", "rollAppBlock", rollAppBlock)
+	}
+
 	return grpcRes.Tx, nil
 }
 
