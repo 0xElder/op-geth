@@ -1,12 +1,11 @@
 package miner
 
 import (
-	"encoding/hex"
 	"sync/atomic"
 
+	elderutils "github.com/0xElder/elder/utils"
 	eldertypes "github.com/0xElder/elder/x/registration/types"
 	"github.com/ethereum/go-ethereum/core/types"
-	elderhelper "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -15,14 +14,14 @@ import (
 // enableRollApp enables the rollapp sequencing on the elder sequencer
 // it assusmes that the rollapp is already registered with the elder
 func (w *worker) enableRollApp() {
-	executorAddress := elderhelper.CosmosPublicKeyToCosmosAddress("elder", hex.EncodeToString(w.config.ElderExecutorPk.PubKey().Bytes()))
+	executorAddress := elderutils.CosmosPublicKeyToCosmosAddress("elder", w.config.ElderExecutorPk.PubKey())
 	msg := eldertypes.MsgEnableRoll{
 		Sender:         executorAddress,
 		RollID:         w.config.ElderRollID,
 		RollStartBlock: w.config.ElderRollStartBlock,
 	}
 
-	res, err := elderhelper.BuildElderTxFromMsgAndBroadcast(w.config.ElderGrpcClientConn, w.config.ElderExecutorPk, &msg)
+	res, err := elderutils.BuildElderTxFromMsgAndBroadcast(w.config.ElderGrpcClientConn, w.config.ElderExecutorPk, &msg)
 	if res == "" || err != nil {
 		log.Crit("Failed to enable rollapp sequencing in elder", "err", err)
 	}
@@ -38,7 +37,7 @@ func (w *worker) queryFromElder() ([][]byte, error) {
 	}
 	currBlock := w.chain.CurrentBlock().Number.Uint64()
 
-	response, err := elderhelper.QueryElderForSeqencedBlock(w.config.ElderGrpcClientConn, w.config.ElderRollID, currBlock)
+	response, err := elderutils.QueryElderForSeqencedBlock(w.config.ElderGrpcClientConn, w.config.ElderRollID, currBlock)
 	if err != nil {
 		return nil, types.ExtractErrorFromQueryResponse(err.Error())
 	}

@@ -34,8 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	elderutils "github.com/0xElder/elder/utils"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -43,7 +42,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
-	elderhelper "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -1699,7 +1697,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 
 		cfg.ElderGrpcClientConn = conn
 
-		roll, err := elderhelper.QueryElderRollApp(conn, cfg.ElderRollID)
+		roll, err := elderutils.QueryElderRollApp(conn, cfg.ElderRollID)
 		if err != nil {
 			Fatalf("Failed to query elder roll app: %v", err)
 		}
@@ -1719,26 +1717,16 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 		}
 
 		if ctx.IsSet(ElderExecutorPkFlag.Name) {
-			executorKey := ctx.String(ElderExecutorPkFlag.Name)
-			if executorKey[0:2] == "0x" {
-				executorKey = executorKey[2:]
-			}
-
-			executorKeyBytes, err := hex.DecodeString(executorKey)
+			privateKey, err := elderutils.PrivateKeyStringToSecp256k1PrivKey(ctx.String(ElderExecutorPkFlag.Name))
 			if err != nil {
-				Fatalf("Failed to decode private key: %v\n", err)
+				Fatalf("Failed to convert elder executor pk to private key: %v", err)
 			}
 
-			// Load the SECP256K1 private key from the decoded bytes
-			pk, _ := btcec.PrivKeyFromBytes(executorKeyBytes)
-			privateKey := secp256k1.PrivKey{
-				Key: pk.Serialize(),
-			}
 			cfg.ElderExecutorPk = privateKey
 		}
 
 		// If roll is not enabled, then the elder registered executor for roll and executor pk must match
-		if !roll.Enabled && elderhelper.CosmosPublicKeyToCosmosAddress("elder", hex.EncodeToString(cfg.ElderExecutorPk.PubKey().Bytes())) != roll.Executor {
+		if !roll.Enabled && elderutils.CosmosPublicKeyToCosmosAddress("elder", cfg.ElderExecutorPk.PubKey()) != roll.Executor {
 			Fatalf("Executor pk does not match the roll app executor")
 		}
 
@@ -1747,7 +1735,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Elder roll start block mismatch: %d != %d", roll.RollStartBlock, cfg.ElderRollStartBlock)
 		}
 
-		elderExecutorBalance, err := elderhelper.QueryElderAccountBalance(conn, &cfg.ElderExecutorPk)
+		elderExecutorBalance, err := elderutils.QueryElderAccountBalance(conn, &cfg.ElderExecutorPk)
 		if elderExecutorBalance == nil || err != nil {
 			Fatalf("Failed to query elder executor balance: %v", err)
 		}
