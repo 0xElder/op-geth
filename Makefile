@@ -8,6 +8,10 @@ GOBIN = ./build/bin
 GO ?= latest
 GORUN = go run
 
+docker:
+	docker build -t op-geth-elder:latest --build-arg GITHUB_ACCESS_TOKEN=${GITHUB_ACCESS_TOKEN} .
+
+
 #? geth: Build geth
 geth:
 	$(GORUN) build/ci.go install ./cmd/geth
