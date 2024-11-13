@@ -512,31 +512,31 @@ var (
 
 	// Elder Flags
 	ElderSequencerEnabledFlag = &cli.BoolFlag{
-		Name:     "elder-seq",
+		Name:     "elder.seq",
 		Usage:    "Flag to enable the Elder sequencer",
 		Value:    ethconfig.Defaults.Miner.ElderSequencerEnabled,
 		Category: flags.MiscCategory,
 	}
 	ElderSeqURLFlag = &cli.StringFlag{
-		Name:     "elder-seq-url",
+		Name:     "elder.seq.url",
 		Usage:    "URL of the Elder sequencer",
 		Category: flags.MiscCategory,
 	}
 	ElderRollIDFlag = &cli.Uint64Flag{
-		Name:     "elder-roll-id",
+		Name:     "elder.roll.id",
 		Usage:    "ID of the Elder sequencer",
 		Value:    0,
 		Category: flags.MiscCategory,
 	}
 	ElderRollStartBlockFlag = &cli.Uint64Flag{
-		Name:     "elder-roll-start-block",
-		Usage:    "Block number at which the elder starts sequencing rollapp transactions, optional if elder sequencing is disabled or rollapp is already enabled",
+		Name:     "elder.roll.start.block",
+		Usage:    "Block number at which the elder starts sequencing rollapp transactions, optional if elder sequencing is disabled or rollup is already enabled",
 		Value:    0,
 		Category: flags.MiscCategory,
 	}
 	ElderExecutorPkFlag = &cli.StringFlag{
-		Name:     "elder-executor",
-		Usage:    "Flag to pass private key of rollapp executor, optional if elder sequencing is disabled or rollapp is already enabled",
+		Name:     "elder.executor",
+		Usage:    "Flag to pass private key of rollapp executor, optional if elder sequencing is disabled or rollup is already enabled",
 		Value:    "",
 		Category: flags.MiscCategory,
 	}
@@ -1677,6 +1677,12 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.IsSet(ElderRollIDFlag.Name) {
 		cfg.ElderRollID = ctx.Uint64(ElderRollIDFlag.Name)
 	}
+
+	log.Info("Flags",
+		"ElderSequencerEnabledFlag", ctx.Bool(ElderSequencerEnabledFlag.Name),
+		"ElderSeqURLFlag", ctx.String(ElderSeqURLFlag.Name),
+		"ElderRollIDFlag", ctx.Uint64(ElderRollIDFlag.Name),
+		"ElderExecutorPkFlag", ctx.String(ElderExecutorPkFlag.Name))
 
 	// Validity checks for elder sequencer, if enabled
 	if cfg.ElderSequencerEnabled {
