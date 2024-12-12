@@ -366,7 +366,7 @@ func QueryElderAccountBalance(conn *grpc.ClientConn, executorPk *secp256k1.PrivK
 	address := CosmosPublicKeyToCosmosAddress("elder", hex.EncodeToString(executorPk.PubKey().Bytes()))
 	req := banktypes.QueryBalanceRequest{
 		Address: address,
-		Denom:   "elder",
+		Denom:   "uelder",
 	}
 
 	res, err := bankClient.Balance(ctx, &req)

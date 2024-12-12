@@ -1752,7 +1752,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Failed to query elder executor balance: %v", err)
 		}
 
-		if elderExecutorBalance.Cmp(big.NewInt(10)) < 0 {
+		if elderExecutorBalance.Cmp(big.NewInt(10*10e6)) < 0 {
 			Fatalf("Elder executor balance is less than 10, ensure it has enough balance to pay for gas (minimum 10elder)")
 		}
 	}
