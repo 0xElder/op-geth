@@ -274,7 +274,7 @@ func BuildElderTxFromMsgAndBroadcast(conn *grpc.ClientConn, privateKey secp256k1
 
 	// todo: @anshalshukla - check if there is a better way to set gas price
 	// default gas price
-	gasPrice := .01 * math.Pow(10, -6) // .01 uelder/gas
+	gasPrice := 1.5 * math.Pow(10, -6) // 1.5 uelder/gas
 
 	// Set a fee amount
 	feeAmount := cosmosmath.NewInt(int64(math.Ceil((float64(adjustedGas) * gasPrice))))
