@@ -13,7 +13,6 @@ import (
 	"time"
 
 	registrationtypes "github.com/0xElder/elder/x/registration/types"
-	"github.com/0xElder/elder/x/router/keeper"
 	routertypes "github.com/0xElder/elder/x/router/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
@@ -36,7 +35,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	cosmosmath "cosmossdk.io/math"
-	elderregistration "github.com/0xElder/elder/api/elder/registration"
 	bech32 "github.com/btcsuite/btcutil/bech32"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -488,24 +486,24 @@ func queryElderAccount(conn *grpc.ClientConn, address string) (uint64, uint64, e
 	return account.AccountNumber, account.Sequence, nil
 }
 
-func queryElderRollMinTxFees(conn *grpc.ClientConn, rollId uint64) (uint64, error) {
-	// Create a client for querying the roll registration
-	registerClient := elderregistration.NewQueryClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
+// func queryElderRollMinTxFees(conn *grpc.ClientConn, rollId uint64) (uint64, error) {
+// 	// Create a client for querying the roll registration
+// 	registerClient := elderregistration.NewQueryClient(conn)
+// 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+// 	defer cancel()
 
-	// Fetch the roll registration
-	rollReq := &elderregistration.QueryQueryRollRequest{
-		Id: rollId,
-	}
-	rollRes, err := registerClient.QueryRoll(ctx, rollReq)
-	if err != nil {
-		log.Warn("Failed to fetch roll registration", "err", err)
-		return 0, err
-	}
+// 	// Fetch the roll registration
+// 	rollReq := &elderregistration.QueryQueryRollRequest{
+// 		Id: rollId,
+// 	}
+// 	rollRes, err := registerClient.QueryRoll(ctx, rollReq)
+// 	if err != nil {
+// 		log.Warn("Failed to fetch roll registration", "err", err)
+// 		return 0, err
+// 	}
 
-	return rollRes.Roll.MinTxFees, nil
-}
+// 	return rollRes.Roll.MinTxFees, nil
+// }
 
 func broadcastElderTx(conn *grpc.ClientConn, txBytes []byte) (*sdktypes.TxResponse, error) {
 	// Broadcast the tx via gRPC. We create a new client for the Protobuf Tx
@@ -589,15 +587,15 @@ func simulateElderTx(conn *grpc.ClientConn, txBytes []byte) (uint64, error) {
 	return grpcRes.GasInfo.GasUsed, nil
 }
 
-func calcTxFees(conn *grpc.ClientConn, txData []byte, rollId uint64) uint64 {
-	// Fetch the fees per byte from the chain
-	feesPerByte, err := queryElderRollMinTxFees(conn, rollId)
-	if err != nil {
-		return 0
-	}
+// func calcTxFees(conn *grpc.ClientConn, txData []byte, rollId uint64) uint64 {
+// 	// Fetch the fees per byte from the chain
+// 	feesPerByte, err := queryElderRollMinTxFees(conn, rollId)
+// 	if err != nil {
+// 		return 0
+// 	}
 
-	return keeper.TxFees(txData, feesPerByte)
-}
+// 	return keeper.TxFees(txData, feesPerByte)
+// }
 
 // PublicKeyToAddress converts secp256k1 public key to a bech32 Tendermint/Cosmos based address
 func CosmosPublicKeyToCosmosAddress(addressPrefix, publicKeyString string) string {
