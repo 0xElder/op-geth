@@ -99,7 +99,7 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 			}
 		}
 
-		txs, err := types.TxsBytesToTxs(resp)
+		txs, err := types.TxsBytesToTxs(resp, w.chainConfig.ChainID)
 		if err != nil {
 			log.Crit("Failed to convert txs to bytes", "err", err)
 		}

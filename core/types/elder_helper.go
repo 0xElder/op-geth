@@ -61,10 +61,10 @@ type ElderGetTxByBlockResponseInvalid struct {
 	Details []interface{} `json:"details"`
 }
 
-func TxsBytesToTxs(txs [][]byte) ([]*Transaction, error) {
+func TxsBytesToTxs(txs [][]byte, chainID *big.Int) ([]*Transaction, error) {
 	elderInnerTxs := make([]*Transaction, len(txs))
 	for i, txBytes := range txs {
-		elderInnerTx, err := ElderTxToElderInnerTx(txBytes)
+		elderInnerTx, err := ElderTxToElderInnerTx(txBytes, chainID)
 		if err != nil {
 			return []*Transaction{}, err
 		}
@@ -119,13 +119,13 @@ func ElderTxToEthTx(rawElderTxBytes []byte) (*Transaction, uint64, string, error
 	return &tx, accSeq, accPublicKeyStr, nil
 }
 
-func ElderTxToElderInnerTx(rawElderTxBytes []byte) (*Transaction, error) {
+func ElderTxToElderInnerTx(rawElderTxBytes []byte, chainID *big.Int) (*Transaction, error) {
 	tx, accSeq, accPublicKeyStr, err := ElderTxToEthTx(rawElderTxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid transaction2 %+v: %v", rawElderTxBytes, err)
 	}
 
-	elderInnerTx, err := LegacyTxToElderInnerTx(tx, rawElderTxBytes, accSeq, accPublicKeyStr)
+	elderInnerTx, err := LegacyTxToElderInnerTx(tx, rawElderTxBytes, accSeq, accPublicKeyStr, chainID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid transaction5 %+v: %v", tx, err)
 	}
@@ -133,18 +133,18 @@ func ElderTxToElderInnerTx(rawElderTxBytes []byte) (*Transaction, error) {
 	return elderInnerTx, nil
 }
 
-func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint64, accPublicKeyStr string) (*Transaction, error) {
+func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint64, accPublicKeyStr string, chainID *big.Int) (*Transaction, error) {
 	v, r, s := tx.RawSignatureValues()
 	nonce := tx.Nonce()
 
 	// If the transaction is not signed, set the nonce to 0
 	// keep nonce unchanged for double signed tx
-	if v == nil || r == nil || s == nil {
+	if !(v.Int64() != 0 && r.Int64() != 0 && s.Int64() != 0) {
 		nonce = 0
 	}
 
 	inner := NewTx(&ElderInnerTx{
-		ChainID:              tx.ChainId(),
+		ChainID:              chainID,
 		Gas:                  tx.Gas(),
 		To:                   tx.To(),
 		Value:                tx.Value(),

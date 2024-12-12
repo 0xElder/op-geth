@@ -372,10 +372,10 @@ func (tx *Transaction) ElderOuterTx() []byte {
 func (tx *Transaction) IsElderDoubleSignedInnerTx() bool {
 	if txData, ok := tx.inner.(*ElderInnerTx); ok {
 		v, r, s := txData.rawSignatureValues()
-		if v == nil || r == nil || s == nil {
-			return false
+		if v.Int64() != 0 && r.Int64() != 0 && s.Int64() != 0 {
+			return true
 		}
-		return true
+		return false
 	}
 
 	return false
