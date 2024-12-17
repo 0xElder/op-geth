@@ -18,7 +18,7 @@ func (w *worker) enableRollApp() {
 	executorAddress := elderhelper.CosmosPublicKeyToCosmosAddress("elder", hex.EncodeToString(w.config.ElderExecutorPk.PubKey().Bytes()))
 	msg := eldertypes.MsgEnableRoll{
 		Sender:         executorAddress,
-		RollID:         w.config.ElderRollID,
+		RollId:         w.config.ElderRollID,
 		RollStartBlock: w.config.ElderRollStartBlock,
 	}
 
