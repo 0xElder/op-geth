@@ -356,7 +356,7 @@ func (tx *Transaction) IsDepositTx() bool {
 	return tx.Type() == DepositTxType
 }
 
-// IsElderInnerTx returns true if the transaction is a deposit tx type.
+// IsElderInnerTx returns true if the transaction is a elder tx type.
 func (tx *Transaction) IsElderInnerTx() bool {
 	return tx.Type() == ElderInnerTxType
 }

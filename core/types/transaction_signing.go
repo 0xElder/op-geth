@@ -191,6 +191,15 @@ func (s cancunSigner) Sender(tx *Transaction) (common.Address, error) {
 	if tx.Type() != BlobTxType {
 		return s.londonSigner.Sender(tx)
 	}
+
+	if tx.Type() == ElderInnerTxType {
+		aa, err := ElderInnerTxSender(tx)
+		if err != nil {
+			return common.Address{}, err
+		}
+		return aa, nil
+	}
+
 	V, R, S := tx.RawSignatureValues()
 	// Blob txs are defined to use 0 and 1 as their recovery
 	// id, add 27 to become equivalent to unprotected Homestead signatures.
@@ -255,7 +264,6 @@ func NewLondonSigner(chainId *big.Int) Signer {
 	return londonSigner{eip2930Signer{NewEIP155Signer(chainId)}}
 }
 
-// todo :: 0xsharma : add elderInnerTx checks for other signers as well
 func (s londonSigner) Sender(tx *Transaction) (common.Address, error) {
 	if tx.Type() == DepositTxType {
 		switch tx.inner.(type) {
@@ -365,6 +373,12 @@ func (s eip2930Signer) Sender(tx *Transaction) (common.Address, error) {
 		// AL txs are defined to use 0 and 1 as their recovery
 		// id, add 27 to become equivalent to unprotected Homestead signatures.
 		V = new(big.Int).Add(V, big.NewInt(27))
+	case ElderInnerTxType:
+		aa, err := ElderInnerTxSender(tx)
+		if err != nil {
+			return common.Address{}, err
+		}
+		return aa, nil
 	default:
 		return common.Address{}, ErrTxTypeNotSupported
 	}
@@ -457,6 +471,13 @@ func (s EIP155Signer) Sender(tx *Transaction) (common.Address, error) {
 	if tx.ChainId().Cmp(s.chainId) != 0 {
 		return common.Address{}, fmt.Errorf("%w: have %d want %d", ErrInvalidChainId, tx.ChainId(), s.chainId)
 	}
+	if tx.Type() == ElderInnerTxType {
+		aa, err := ElderInnerTxSender(tx)
+		if err != nil {
+			return common.Address{}, err
+		}
+		return aa, nil
+	}
 	V, R, S := tx.RawSignatureValues()
 	V = new(big.Int).Sub(V, s.chainIdMul)
 	V.Sub(V, big8)
@@ -514,6 +535,13 @@ func (hs HomesteadSigner) Sender(tx *Transaction) (common.Address, error) {
 	if tx.Type() != LegacyTxType {
 		return common.Address{}, ErrTxTypeNotSupported
 	}
+	if tx.Type() == ElderInnerTxType {
+		aa, err := ElderInnerTxSender(tx)
+		if err != nil {
+			return common.Address{}, err
+		}
+		return aa, nil
+	}
 	v, r, s := tx.RawSignatureValues()
 	return recoverPlain(hs.Hash(tx), r, s, v, true)
 }
@@ -534,6 +562,13 @@ func (s FrontierSigner) Equal(s2 Signer) bool {
 func (fs FrontierSigner) Sender(tx *Transaction) (common.Address, error) {
 	if tx.Type() != LegacyTxType {
 		return common.Address{}, ErrTxTypeNotSupported
+	}
+	if tx.Type() == ElderInnerTxType {
+		aa, err := ElderInnerTxSender(tx)
+		if err != nil {
+			return common.Address{}, err
+		}
+		return aa, nil
 	}
 	v, r, s := tx.RawSignatureValues()
 	return recoverPlain(fs.Hash(tx), r, s, v, false)
