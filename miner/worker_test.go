@@ -18,6 +18,7 @@ package miner
 
 import (
 	"math/big"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -168,6 +170,9 @@ func newTestWorker(t *testing.T, chainConfig *params.ChainConfig, engine consens
 }
 
 func TestGenerateAndImportBlock(t *testing.T) {
+	// Added logging to stdout for debugging
+	log.SetDefault(log.NewLogger(log.NewTerminalHandler(os.Stderr, true)))
+
 	t.Parallel()
 	var (
 		db     = rawdb.NewMemoryDatabase()
