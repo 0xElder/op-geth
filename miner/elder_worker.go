@@ -58,7 +58,7 @@ func (w *worker) queryFromElder() ([][]byte, error) {
 // returns true if the elder sequencer should have sequenced the block, false otherwise
 func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment) (bool, error) {
 	currentBlock := w.chain.CurrentBlock().Number.Uint64()
-	if !w.config.ElderRollAppEnabled {
+	if !w.config.ElderRollAppEnabled && w.config.ElderSequencerEnabled {
 		rollappStartBlock := w.config.ElderRollStartBlock
 
 		if currentBlock == rollappStartBlock-1 {
