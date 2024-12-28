@@ -34,6 +34,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xElder/elder/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/ethereum/go-ethereum/accounts"
@@ -1738,7 +1739,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 		}
 
 		// If roll is not enabled, then the elder registered executor for roll and executor pk must match
-		if !roll.Enabled && elderhelper.CosmosPublicKeyToCosmosAddress("elder", hex.EncodeToString(cfg.ElderExecutorPk.PubKey().Bytes())) != roll.Executor {
+		if !roll.Enabled && utils.CosmosPublicKeyToBech32Address("elder", cfg.ElderExecutorPk.PubKey()) != roll.Executor {
 			Fatalf("Executor pk does not match the roll app executor")
 		}
 
