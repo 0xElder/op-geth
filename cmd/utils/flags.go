@@ -35,8 +35,8 @@ import (
 	"time"
 
 	"github.com/0xElder/elder/utils"
+	registrationtypes "github.com/0xElder/elder/x/registration/types"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -44,7 +44,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
-	elderhelper "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -1700,7 +1699,8 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 
 		cfg.ElderGrpcClientConn = conn
 
-		roll, err := elderhelper.QueryElderRollApp(conn, cfg.ElderRollID)
+		registrationClient := registrationtypes.NewQueryClient(conn)
+		roll, err := utils.QueryElderRollApp(registrationClient, cfg.ElderRollID)
 		if err != nil {
 			Fatalf("Failed to query elder roll app: %v", err)
 		}
@@ -1732,7 +1732,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 
 			// Load the SECP256K1 private key from the decoded bytes
 			pk, _ := btcec.PrivKeyFromBytes(executorKeyBytes)
-			privateKey := secp256k1.PrivKey{
+			privateKey := utils.Secp256k1PrivateKey{
 				Key: pk.Serialize(),
 			}
 			cfg.ElderExecutorPk = privateKey
@@ -1748,7 +1748,8 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Elder roll start block mismatch: %d != %d", roll.RollStartBlock, cfg.ElderRollStartBlock)
 		}
 
-		elderExecutorBalance, err := elderhelper.QueryElderAccountBalance(conn, &cfg.ElderExecutorPk)
+		bankClient := utils.BankClient(conn)
+		elderExecutorBalance, err := utils.QueryElderAccountBalance(bankClient, &cfg.ElderExecutorPk)
 		if elderExecutorBalance == nil || err != nil {
 			Fatalf("Failed to query elder executor balance: %v", err)
 		}

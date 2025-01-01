@@ -11,18 +11,12 @@ import (
 	"time"
 
 	"github.com/0xElder/elder/utils"
-	registrationtypes "github.com/0xElder/elder/x/registration/types"
 	routertypes "github.com/0xElder/elder/x/router/types"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	eldertx "github.com/cosmos/cosmos-sdk/types/tx"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/cosmos/gogoproto/proto"
 	"google.golang.org/grpc"
 
-	"github.com/cosmos/gogoproto/proto"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-
-	"github.com/ethereum/go-ethereum/log"
 )
 
 var (
@@ -69,8 +63,8 @@ func Base64toBytes(in string) ([]byte, error) {
 	return out, nil
 }
 
-func BytesToCosmosTx(rawTxBytes []byte) (*eldertx.Tx, error) {
-	var tx eldertx.Tx
+func BytesToCosmosTx(rawTxBytes []byte) (*utils.ElderTx, error) {
+	var tx utils.ElderTx
 
 	err := tx.Unmarshal(rawTxBytes)
 	if err != nil {
@@ -193,7 +187,7 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 
 	signerCosmos := elderOuterTx.GetAuthInfo()
 
-	cosmosPubKey := &secp256k1.PubKey{}
+	cosmosPubKey := &utils.Secp256k1PublicKey{}
 	err = proto.Unmarshal(signerCosmos.SignerInfos[0].PublicKey.Value, cosmosPubKey)
 	if err != nil {
 		panic(err)
@@ -243,43 +237,4 @@ func QueryElderForSeqencedBlock(conn *grpc.ClientConn, rollId, rollAppBlockNumbe
 	}
 
 	return blockRes, nil
-}
-
-func QueryElderRollApp(conn *grpc.ClientConn, rollId uint64) (*registrationtypes.Roll, error) {
-	registrationClient := registrationtypes.NewQueryClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	rollReq := &registrationtypes.QueryQueryRollRequest{
-		Id: rollId,
-	}
-
-	// Fetch the roll app
-	rollRes, err := registrationClient.QueryRoll(ctx, rollReq)
-	if err != nil {
-		log.Warn("Failed to fetch roll app", "err", err)
-		return nil, err
-	}
-
-	return rollRes.Roll, nil
-}
-
-func QueryElderAccountBalance(conn *grpc.ClientConn, executorPk *secp256k1.PrivKey) (*big.Int, error) {
-	bankClient := banktypes.NewQueryClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	address := utils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
-	req := banktypes.QueryBalanceRequest{
-		Address: address,
-		Denom:   "uelder",
-	}
-
-	res, err := bankClient.Balance(ctx, &req)
-	if err != nil {
-		log.Warn("Failed to fetch balance", "err", err)
-		return &big.Int{}, err
-	}
-
-	return res.Balance.Amount.BigInt(), nil
 }
