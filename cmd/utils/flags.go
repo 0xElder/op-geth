@@ -34,9 +34,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xElder/elder/utils"
+	elderutils "github.com/0xElder/elder/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -44,7 +43,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
-	elderhelper "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -1698,7 +1697,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Failed to connect to elder sequencer: %v, make sure the port mentioned is of gRPC server", err)
 		}
 
-		elderClient := elderhelper.NewElderClient(conn)
+		elderClient := types.NewElderClient(conn)
 		cfg.ElderGrpcClient = elderClient
 
 		roll, err := cfg.ElderGrpcClient.QueryElderRollApp(cfg.ElderRollID)
@@ -1733,14 +1732,14 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 
 			// Load the SECP256K1 private key from the decoded bytes
 			pk, _ := btcec.PrivKeyFromBytes(executorKeyBytes)
-			privateKey := secp256k1.PrivKey{
+			privateKey := elderutils.Secp256k1PrivateKey{
 				Key: pk.Serialize(),
 			}
 			cfg.ElderExecutorPk = privateKey
 		}
 
 		// If roll is not enabled, then the elder registered executor for roll and executor pk must match
-		if !roll.Enabled && utils.CosmosPublicKeyToBech32Address("elder", cfg.ElderExecutorPk.PubKey()) != roll.Executor {
+		if !roll.Enabled && elderutils.CosmosPublicKeyToBech32Address("elder", cfg.ElderExecutorPk.PubKey()) != roll.Executor {
 			Fatalf("Executor pk does not match the roll app executor")
 		}
 

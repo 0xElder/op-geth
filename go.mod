@@ -6,7 +6,7 @@ toolchain go1.22.3
 
 require (
 	cosmossdk.io/api v0.7.6
-	github.com/0xElder/elder v0.1.1-0.20241228081148-a05be4998bd9
+	github.com/0xElder/elder v0.1.1-0.20250101094659-9248cb3c3097
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.2.0
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/VictoriaMetrics/fastcache v1.12.1

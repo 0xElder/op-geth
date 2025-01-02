@@ -8,11 +8,10 @@ import (
 	"math/big"
 	"strings"
 
+	elderUtils "github.com/0xElder/elder/utils"
 	routertypes "github.com/0xElder/elder/x/router/types"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	eldertx "github.com/cosmos/cosmos-sdk/types/tx"
-
 	"github.com/cosmos/gogoproto/proto"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -61,8 +60,8 @@ func Base64toBytes(in string) ([]byte, error) {
 	return out, nil
 }
 
-func BytesToCosmosTx(rawTxBytes []byte) (*eldertx.Tx, error) {
-	var tx eldertx.Tx
+func BytesToCosmosTx(rawTxBytes []byte) (*elderUtils.ElderTx, error) {
+	var tx elderUtils.ElderTx
 
 	err := tx.Unmarshal(rawTxBytes)
 	if err != nil {
@@ -185,7 +184,7 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 
 	signerCosmos := elderOuterTx.GetAuthInfo()
 
-	cosmosPubKey := &secp256k1.PubKey{}
+	cosmosPubKey := &elderUtils.Secp256k1PublicKey{}
 	err = proto.Unmarshal(signerCosmos.SignerInfos[0].PublicKey.Value, cosmosPubKey)
 	if err != nil {
 		panic(err)
