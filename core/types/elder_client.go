@@ -5,10 +5,9 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/0xElder/elder/utils"
+	elderUtils "github.com/0xElder/elder/utils"
 	registrationtypes "github.com/0xElder/elder/x/registration/types"
 	routertypes "github.com/0xElder/elder/x/router/types"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/ethereum/go-ethereum/log"
 	"google.golang.org/grpc"
@@ -19,19 +18,19 @@ type ElderClient struct {
 }
 
 // EnableRollApp implements IElderClient.
-func (ec ElderClient) EnableRollApp(rollId uint64, rollStartBlock uint64, executorPk *secp256k1.PrivKey, elderEnableRollAppCh chan struct{}) {
-	executorAddress := utils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
+func (ec ElderClient) EnableRollApp(rollId uint64, rollStartBlock uint64, executorPk *elderUtils.Secp256k1PrivateKey, elderEnableRollAppCh chan struct{}) {
+	executorAddress := elderUtils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
 	msg := registrationtypes.MsgEnableRoll{
 		Sender:         executorAddress,
 		RollId:         rollId,
 		RollStartBlock: rollStartBlock,
 	}
 
-	authClient := utils.AuthClient(ec.conn)
-	tmClient := utils.TmClient(ec.conn)
-	txClient := utils.TxClient(ec.conn)
+	authClient := elderUtils.AuthClient(ec.conn)
+	tmClient := elderUtils.TmClient(ec.conn)
+	txClient := elderUtils.TxClient(ec.conn)
 
-	res, err := utils.BuildElderTxFromMsgAndBroadcast(authClient, tmClient, txClient, *executorPk, &msg, 3)
+	res, err := elderUtils.BuildElderTxFromMsgAndBroadcast(authClient, tmClient, txClient, *executorPk, &msg, 3)
 	if res == "" || err != nil {
 		log.Crit("Failed to enable rollapp sequencing in elder", "err", err)
 	}
@@ -40,12 +39,12 @@ func (ec ElderClient) EnableRollApp(rollId uint64, rollStartBlock uint64, execut
 }
 
 // QueryElderAccountBalance implements IElderClient.
-func (ec ElderClient) QueryElderAccountBalance(executorPk *secp256k1.PrivKey) (*big.Int, error) {
+func (ec ElderClient) QueryElderAccountBalance(executorPk *elderUtils.Secp256k1PrivateKey) (*big.Int, error) {
 	bankClient := banktypes.NewQueryClient(ec.conn)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	address := utils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
+	address := elderUtils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
 	req := banktypes.QueryBalanceRequest{
 		Address: address,
 		Denom:   "uelder",
