@@ -3,8 +3,6 @@ package miner
 import (
 	"sync/atomic"
 
-	"github.com/0xElder/elder/utils"
-	eldertypes "github.com/0xElder/elder/x/registration/types"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -14,46 +12,13 @@ import (
 // enableRollApp enables the rollapp sequencing on the elder sequencer
 // it assusmes that the rollapp is already registered with the elder
 func (w *worker) enableRollApp() {
-	executorAddress := utils.CosmosPublicKeyToBech32Address("elder", w.config.ElderExecutorPk.PubKey())
-	msg := eldertypes.MsgEnableRoll{
-		Sender:         executorAddress,
-		RollId:         w.config.ElderRollID,
-		RollStartBlock: w.config.ElderRollStartBlock,
-	}
-
-	conn := w.config.ElderGrpcClientConn
-	authClient := utils.AuthClient(conn)
-	tmClient := utils.TmClient(conn)
-	txClient := utils.TxClient(conn)
-
-	res, err := utils.BuildElderTxFromMsgAndBroadcast(authClient, tmClient, txClient, w.config.ElderExecutorPk, &msg, 3)
-	if res == "" || err != nil {
-		log.Crit("Failed to enable rollapp sequencing in elder", "err", err)
-	}
-
-	w.elderEnableRollAppCh <- struct{}{}
+	w.config.ElderGrpcClient.EnableRollApp(w.config.ElderRollID, w.config.ElderRollStartBlock, &w.config.ElderExecutorPk, w.elderEnableRollAppCh)
 }
 
 // query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
 func (w *worker) queryFromElder() ([][]byte, error) {
-	if !w.config.ElderRollAppEnabled {
-		return nil, types.ErrElderRollAppNotEnabled
-	}
-	currBlock := w.chain.CurrentBlock().Number.Uint64()
-
-	response, err := types.QueryElderForSeqencedBlock(w.config.ElderGrpcClientConn, w.config.ElderRollID, currBlock)
-	if err != nil {
-		return nil, types.ExtractErrorFromQueryResponse(err.Error())
-	}
-
-	// elder yet to sequence block if
-	// requested roll app block > last sequenced roll app block on elder
-	if uint64(response.CurrentHeight) < currBlock {
-		return nil, types.ErrElderBlockHeighMoreThanCurrent
-	}
-
-	return response.Txs.TxList, nil
+	return w.config.ElderGrpcClient.QueryFromElder(w.config.ElderRollAppEnabled, w.chain.CurrentBlock().Number.Uint64(), w.config.ElderRollID)
 }
 
 // fillElderTransactions queries the transaction from elder sequencing after validation

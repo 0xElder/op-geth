@@ -1698,9 +1698,10 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Failed to connect to elder sequencer: %v, make sure the port mentioned is of gRPC server", err)
 		}
 
-		cfg.ElderGrpcClientConn = conn
+		elderClient := elderhelper.NewElderClient(conn)
+		cfg.ElderGrpcClient = elderClient
 
-		roll, err := elderhelper.QueryElderRollApp(conn, cfg.ElderRollID)
+		roll, err := cfg.ElderGrpcClient.QueryElderRollApp(cfg.ElderRollID)
 		if err != nil {
 			Fatalf("Failed to query elder roll app: %v", err)
 		}
@@ -1748,7 +1749,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Elder roll start block mismatch: %d != %d", roll.RollStartBlock, cfg.ElderRollStartBlock)
 		}
 
-		elderExecutorBalance, err := elderhelper.QueryElderAccountBalance(conn, &cfg.ElderExecutorPk)
+		elderExecutorBalance, err := cfg.ElderGrpcClient.QueryElderAccountBalance(&cfg.ElderExecutorPk)
 		if elderExecutorBalance == nil || err != nil {
 			Fatalf("Failed to query elder executor balance: %v", err)
 		}

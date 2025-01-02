@@ -1,28 +1,20 @@
 package types
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"strings"
-	"time"
 
-	"github.com/0xElder/elder/utils"
-	registrationtypes "github.com/0xElder/elder/x/registration/types"
 	routertypes "github.com/0xElder/elder/x/router/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	eldertx "github.com/cosmos/cosmos-sdk/types/tx"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"google.golang.org/grpc"
 
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-
-	"github.com/ethereum/go-ethereum/log"
 )
 
 var (
@@ -224,62 +216,4 @@ func ExtractErrorFromQueryResponse(message string) error {
 	} else {
 		return fmt.Errorf("unknown error %v", message)
 	}
-}
-
-func QueryElderForSeqencedBlock(conn *grpc.ClientConn, rollId, rollAppBlockNumber uint64) (*routertypes.QueryTxsByBlockResponse, error) {
-	routerClient := routertypes.NewQueryClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	// Fetch the tx list
-	blockReq := &routertypes.QueryTxsByBlockRequest{
-		RollId: rollId,
-		Block:  int64(rollAppBlockNumber),
-	}
-
-	blockRes, err := routerClient.TxsByBlock(ctx, blockReq)
-	if err != nil {
-		return nil, err
-	}
-
-	return blockRes, nil
-}
-
-func QueryElderRollApp(conn *grpc.ClientConn, rollId uint64) (*registrationtypes.Roll, error) {
-	registrationClient := registrationtypes.NewQueryClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	rollReq := &registrationtypes.QueryQueryRollRequest{
-		Id: rollId,
-	}
-
-	// Fetch the roll app
-	rollRes, err := registrationClient.QueryRoll(ctx, rollReq)
-	if err != nil {
-		log.Warn("Failed to fetch roll app", "err", err)
-		return nil, err
-	}
-
-	return rollRes.Roll, nil
-}
-
-func QueryElderAccountBalance(conn *grpc.ClientConn, executorPk *secp256k1.PrivKey) (*big.Int, error) {
-	bankClient := banktypes.NewQueryClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	address := utils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
-	req := banktypes.QueryBalanceRequest{
-		Address: address,
-		Denom:   "uelder",
-	}
-
-	res, err := bankClient.Balance(ctx, &req)
-	if err != nil {
-		log.Warn("Failed to fetch balance", "err", err)
-		return &big.Int{}, err
-	}
-
-	return res.Balance.Amount.BigInt(), nil
 }
