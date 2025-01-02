@@ -5,10 +5,9 @@ import (
 	"math/big"
 	"time"
 
-	elderUtils "github.com/0xElder/elder/utils"
+	elderutils "github.com/0xElder/elder/utils"
 	registrationtypes "github.com/0xElder/elder/x/registration/types"
 	routertypes "github.com/0xElder/elder/x/router/types"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/ethereum/go-ethereum/log"
 	"google.golang.org/grpc"
 )
@@ -17,46 +16,35 @@ type ElderClient struct {
 	conn *grpc.ClientConn
 }
 
+// QueryElderAccountBalance implements IElderClient.
+func (ec ElderClient) QueryElderAccountBalance(executorPk *elderutils.Secp256k1PrivateKey) (*big.Int, error) {
+	return elderutils.QueryElderAccountBalance(elderutils.BankClient(ec.conn), executorPk)
+}
+
+// QueryElderRollApp implements IElderClient.
+func (ec ElderClient) QueryElderRollApp(rollId uint64) (*registrationtypes.Roll, error) {
+	return elderutils.QueryElderRollApp(registrationtypes.NewQueryClient(ec.conn), rollId)
+}
+
 // EnableRollApp implements IElderClient.
-func (ec ElderClient) EnableRollApp(rollId uint64, rollStartBlock uint64, executorPk *elderUtils.Secp256k1PrivateKey, elderEnableRollAppCh chan struct{}) {
-	executorAddress := elderUtils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
+func (ec ElderClient) EnableRollApp(rollId uint64, rollStartBlock uint64, executorPk *elderutils.Secp256k1PrivateKey, elderEnableRollAppCh chan struct{}) {
+	executorAddress := elderutils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
 	msg := registrationtypes.MsgEnableRoll{
 		Sender:         executorAddress,
 		RollId:         rollId,
 		RollStartBlock: rollStartBlock,
 	}
 
-	authClient := elderUtils.AuthClient(ec.conn)
-	tmClient := elderUtils.TmClient(ec.conn)
-	txClient := elderUtils.TxClient(ec.conn)
+	authClient := elderutils.AuthClient(ec.conn)
+	tmClient := elderutils.TmClient(ec.conn)
+	txClient := elderutils.TxClient(ec.conn)
 
-	res, err := elderUtils.BuildElderTxFromMsgAndBroadcast(authClient, tmClient, txClient, *executorPk, &msg, 3)
+	res, err := elderutils.BuildElderTxFromMsgAndBroadcast(authClient, tmClient, txClient, *executorPk, &msg, 3)
 	if res == "" || err != nil {
 		log.Crit("Failed to enable rollapp sequencing in elder", "err", err)
 	}
 
 	elderEnableRollAppCh <- struct{}{}
-}
-
-// QueryElderAccountBalance implements IElderClient.
-func (ec ElderClient) QueryElderAccountBalance(executorPk *elderUtils.Secp256k1PrivateKey) (*big.Int, error) {
-	bankClient := banktypes.NewQueryClient(ec.conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	address := elderUtils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
-	req := banktypes.QueryBalanceRequest{
-		Address: address,
-		Denom:   "uelder",
-	}
-
-	res, err := bankClient.Balance(ctx, &req)
-	if err != nil {
-		log.Warn("Failed to fetch balance", "err", err)
-		return &big.Int{}, err
-	}
-
-	return res.Balance.Amount.BigInt(), nil
 }
 
 // QueryElderForSeqencedBlock implements IElderClient.
@@ -77,26 +65,6 @@ func (ec ElderClient) QueryElderForSeqencedBlock(rollId uint64, rollAppBlockNumb
 	}
 
 	return blockRes, nil
-}
-
-// QueryElderRollApp implements IElderClient.
-func (ec ElderClient) QueryElderRollApp(rollId uint64) (*registrationtypes.Roll, error) {
-	registrationClient := registrationtypes.NewQueryClient(ec.conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	rollReq := &registrationtypes.QueryQueryRollRequest{
-		Id: rollId,
-	}
-
-	// Fetch the roll app
-	rollRes, err := registrationClient.QueryRoll(ctx, rollReq)
-	if err != nil {
-		log.Warn("Failed to fetch roll app", "err", err)
-		return nil, err
-	}
-
-	return rollRes.Roll, nil
 }
 
 // QueryFromElder implements IElderClient.

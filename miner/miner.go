@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	elderUtils "github.com/0xElder/elder/utils"
+	elderutils "github.com/0xElder/elder/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -68,7 +68,7 @@ type Config struct {
 	ElderGrpcClient       types.IElderClient             `json:"elder_grpc_client_conn"`
 	ElderRollID           uint64                         `json:"elder_roll_id"`
 	ElderRollStartBlock   uint64                         `json:"elder_roll_start_block"`
-	ElderExecutorPk       elderUtils.Secp256k1PrivateKey `json:"elder_executor_pk"`
+	ElderExecutorPk       elderutils.Secp256k1PrivateKey `json:"elder_executor_pk"`
 	ElderRollAppEnabled   bool                           `json:"elder_roll_app_enabled"`
 }
 
