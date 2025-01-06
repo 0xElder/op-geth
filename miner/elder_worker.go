@@ -18,7 +18,8 @@ func (w *worker) enableRollApp() {
 // query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
 func (w *worker) queryFromElder() ([][]byte, error) {
-	return w.config.ElderGrpcClient.QueryFromElder(w.config.ElderRollAppEnabled, w.chain.CurrentBlock().Number.Uint64(), w.config.ElderRollID)
+	blockNumberToFetch := w.chain.CurrentBlock().Number.Uint64() + 1
+	return w.config.ElderGrpcClient.QueryFromElder(w.config.ElderRollAppEnabled, blockNumberToFetch, w.config.ElderRollID)
 }
 
 // fillElderTransactions queries the transaction from elder sequencing after validation
@@ -34,7 +35,7 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 	if !w.config.ElderRollAppEnabled && w.config.ElderSequencerEnabled {
 		rollappStartBlock := w.config.ElderRollStartBlock
 
-		if currentBlock == rollappStartBlock-1 {
+		if currentBlock == rollappStartBlock-2 {
 			go w.enableRollApp()
 		}
 

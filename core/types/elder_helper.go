@@ -1,6 +1,7 @@
 package types
 
 import (
+	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/0xElder/elder/utils"
 	elderutils "github.com/0xElder/elder/utils"
 	routertypes "github.com/0xElder/elder/x/router/types"
 	"github.com/cosmos/gogoproto/proto"
@@ -215,4 +217,22 @@ func ExtractErrorFromQueryResponse(message string) error {
 	} else {
 		return fmt.Errorf("unknown error %v", message)
 	}
+}
+
+func ConvertECdsaToSecp256k1PrivKey(ecdsaKey *ecdsa.PrivateKey) *utils.Secp256k1PrivateKey {
+	// Convert the D value of the ECDSA private key to a byte slice
+	keyBytes := ecdsaKey.D.Bytes()
+
+	// Ensure the key is 32 bytes (256 bits) long
+	if len(keyBytes) < 32 {
+		padding := make([]byte, 32-len(keyBytes))
+		keyBytes = append(padding, keyBytes...)
+	} else if len(keyBytes) > 32 {
+		keyBytes = keyBytes[len(keyBytes)-32:]
+	}
+
+	// Create a new secp256k1 private key from the bytes
+	privKey := &utils.Secp256k1PrivateKey{Key: keyBytes}
+
+	return privKey
 }
