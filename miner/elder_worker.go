@@ -54,7 +54,7 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 
 	// checking roll start block with current chain status is necessary as rollapp might be syncing even when the rollapp is enabled
 	// enter into the statement even if w.config.ElderRollAppEnabled is false
-	if w.config.ElderRollStartBlock <= currentBlock {
+	if w.config.ElderRollStartBlock <= currentBlock+1 {
 		resp, err := w.queryFromElder()
 		if err != nil {
 			switch err {
