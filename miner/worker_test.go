@@ -191,7 +191,7 @@ func newTestWorkerElder(t *testing.T, chainConfig *params.ChainConfig, engine co
 		ElderSequencerEnabled: true,
 		ElderRollID:           1,
 		ElderRollStartBlock:   3,
-		ElderExecutorPk:       *types.ConvertECdsaToSecp256k1PrivKey(testBankKey),
+		ElderExecutorPk:       *types.ConvertEcdsaToSecp256k1PrivKey(testBankKey),
 		ElderGrpcClient:       elderClientMock,
 	}
 

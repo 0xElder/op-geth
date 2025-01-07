@@ -18,6 +18,7 @@ func (w *worker) enableRollApp() {
 // query the elder sequencer for the latest block
 // if the elder sequencer is not available, the query will fail
 func (w *worker) queryFromElder() ([][]byte, error) {
+	// current block is the canonical block number. We need to fetch the current building block i.e. current_canon_block + 1
 	blockNumberToFetch := w.chain.CurrentBlock().Number.Uint64() + 1
 	return w.config.ElderGrpcClient.QueryFromElder(w.config.ElderRollAppEnabled, blockNumberToFetch, w.config.ElderRollID)
 }
@@ -35,6 +36,7 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 	if !w.config.ElderRollAppEnabled && w.config.ElderSequencerEnabled {
 		rollappStartBlock := w.config.ElderRollStartBlock
 
+		// enable sequencing on elder sequencer when the current building block is 1 block away from the elder start block. Current building block is current_canon_block + 1. Hence, the condition is current_canon_block == elder_start_block - 2
 		if currentBlock == rollappStartBlock-2 {
 			go w.enableRollApp()
 		}
@@ -52,6 +54,7 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 		log.Crit("Roll app has passed start block, elder sequencer should be enabled")
 	}
 
+	// current block is the canonical block number. We need to fetch the current building block i.e. current_canon_block + 1
 	// checking roll start block with current chain status is necessary as rollapp might be syncing even when the rollapp is enabled
 	// enter into the statement even if w.config.ElderRollAppEnabled is false
 	if w.config.ElderRollStartBlock <= currentBlock+1 {

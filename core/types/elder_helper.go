@@ -207,6 +207,7 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 	return common.HexToAddress(ethAddr), nil
 }
 
+// TODO : @anshalshukla - Refactor this function
 func ExtractErrorFromQueryResponse(message string) error {
 	if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidStartBlockHeight.ABCICode())) {
 		return ErrElderBlockHeightLessThanStart
@@ -219,7 +220,7 @@ func ExtractErrorFromQueryResponse(message string) error {
 	}
 }
 
-func ConvertECdsaToSecp256k1PrivKey(ecdsaKey *ecdsa.PrivateKey) *utils.Secp256k1PrivateKey {
+func ConvertEcdsaToSecp256k1PrivKey(ecdsaKey *ecdsa.PrivateKey) *utils.Secp256k1PrivateKey {
 	// Convert the D value of the ECDSA private key to a byte slice
 	keyBytes := ecdsaKey.D.Bytes()
 
