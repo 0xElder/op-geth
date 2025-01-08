@@ -34,8 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xElder/elder/utils"
-	registrationtypes "github.com/0xElder/elder/x/registration/types"
+	elderutils "github.com/0xElder/elder/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -44,6 +43,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -1697,10 +1697,10 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Failed to connect to elder sequencer: %v, make sure the port mentioned is of gRPC server", err)
 		}
 
-		cfg.ElderGrpcClientConn = conn
+		elderClient := types.NewElderClient(conn)
+		cfg.ElderGrpcClient = elderClient
 
-		registrationClient := registrationtypes.NewQueryClient(conn)
-		roll, err := utils.QueryElderRollApp(registrationClient, cfg.ElderRollID)
+		roll, err := cfg.ElderGrpcClient.QueryElderRollApp(cfg.ElderRollID)
 		if err != nil {
 			Fatalf("Failed to query elder roll app: %v", err)
 		}
@@ -1732,14 +1732,14 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 
 			// Load the SECP256K1 private key from the decoded bytes
 			pk, _ := btcec.PrivKeyFromBytes(executorKeyBytes)
-			privateKey := utils.Secp256k1PrivateKey{
+			privateKey := elderutils.Secp256k1PrivateKey{
 				Key: pk.Serialize(),
 			}
 			cfg.ElderExecutorPk = privateKey
 		}
 
 		// If roll is not enabled, then the elder registered executor for roll and executor pk must match
-		if !roll.Enabled && utils.CosmosPublicKeyToBech32Address("elder", cfg.ElderExecutorPk.PubKey()) != roll.Executor {
+		if !roll.Enabled && elderutils.CosmosPublicKeyToBech32Address("elder", cfg.ElderExecutorPk.PubKey()) != roll.Executor {
 			Fatalf("Executor pk does not match the roll app executor")
 		}
 
@@ -1748,8 +1748,7 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 			Fatalf("Elder roll start block mismatch: %d != %d", roll.RollStartBlock, cfg.ElderRollStartBlock)
 		}
 
-		bankClient := utils.BankClient(conn)
-		elderExecutorBalance, err := utils.QueryElderAccountBalance(bankClient, &cfg.ElderExecutorPk)
+		elderExecutorBalance, err := cfg.ElderGrpcClient.QueryElderAccountBalance(&cfg.ElderExecutorPk)
 		if elderExecutorBalance == nil || err != nil {
 			Fatalf("Failed to query elder executor balance: %v", err)
 		}

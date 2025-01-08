@@ -1,19 +1,18 @@
 package types
 
 import (
-	"context"
+	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"strings"
-	"time"
 
 	"github.com/0xElder/elder/utils"
+	elderutils "github.com/0xElder/elder/utils"
 	routertypes "github.com/0xElder/elder/x/router/types"
 	"github.com/cosmos/gogoproto/proto"
-	"google.golang.org/grpc"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -63,8 +62,8 @@ func Base64toBytes(in string) ([]byte, error) {
 	return out, nil
 }
 
-func BytesToCosmosTx(rawTxBytes []byte) (*utils.ElderTx, error) {
-	var tx utils.ElderTx
+func BytesToCosmosTx(rawTxBytes []byte) (*elderutils.ElderTx, error) {
+	var tx elderutils.ElderTx
 
 	err := tx.Unmarshal(rawTxBytes)
 	if err != nil {
@@ -187,7 +186,7 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 
 	signerCosmos := elderOuterTx.GetAuthInfo()
 
-	cosmosPubKey := &utils.Secp256k1PublicKey{}
+	cosmosPubKey := &elderutils.Secp256k1PublicKey{}
 	err = proto.Unmarshal(signerCosmos.SignerInfos[0].PublicKey.Value, cosmosPubKey)
 	if err != nil {
 		panic(err)
@@ -208,6 +207,7 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 	return common.HexToAddress(ethAddr), nil
 }
 
+// TODO : @anshalshukla - Refactor this function
 func ExtractErrorFromQueryResponse(message string) error {
 	if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidStartBlockHeight.ABCICode())) {
 		return ErrElderBlockHeightLessThanStart
@@ -220,21 +220,20 @@ func ExtractErrorFromQueryResponse(message string) error {
 	}
 }
 
-func QueryElderForSeqencedBlock(conn *grpc.ClientConn, rollId, rollAppBlockNumber uint64) (*routertypes.QueryTxsByBlockResponse, error) {
-	routerClient := routertypes.NewQueryClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
+func ConvertEcdsaToSecp256k1PrivKey(ecdsaKey *ecdsa.PrivateKey) *utils.Secp256k1PrivateKey {
+	// Convert the D value of the ECDSA private key to a byte slice
+	keyBytes := ecdsaKey.D.Bytes()
 
-	// Fetch the tx list
-	blockReq := &routertypes.QueryTxsByBlockRequest{
-		RollId: rollId,
-		Block:  int64(rollAppBlockNumber),
+	// Ensure the key is 32 bytes (256 bits) long
+	if len(keyBytes) < 32 {
+		padding := make([]byte, 32-len(keyBytes))
+		keyBytes = append(padding, keyBytes...)
+	} else if len(keyBytes) > 32 {
+		keyBytes = keyBytes[len(keyBytes)-32:]
 	}
 
-	blockRes, err := routerClient.TxsByBlock(ctx, blockReq)
-	if err != nil {
-		return nil, err
-	}
+	// Create a new secp256k1 private key from the bytes
+	privKey := &utils.Secp256k1PrivateKey{Key: keyBytes}
 
-	return blockRes, nil
+	return privKey
 }

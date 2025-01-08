@@ -278,7 +278,7 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus
 		elderEnableRollAppCh: make(chan struct{}, 1),
 	}
 
-	if worker.config.ElderSequencerEnabled && (worker.config.ElderGrpcClientConn == nil || worker.config.ElderRollID == 0) {
+	if worker.config.ElderSequencerEnabled && (worker.config.ElderGrpcClient.Conn() == nil || worker.config.ElderRollID == 0) {
 		log.Crit("Elder sequencer enabled but no Client/RollID specified", "rollID", worker.config.ElderRollID)
 	}
 
@@ -421,8 +421,8 @@ func (w *worker) isRunning() bool {
 func (w *worker) close() {
 	w.running.Store(false)
 	close(w.exitCh)
-	if w.config.ElderGrpcClientConn != nil {
-		w.config.ElderGrpcClientConn.Close()
+	if w.config.ElderGrpcClient != nil {
+		w.config.ElderGrpcClient.CloseElderClient()
 	}
 	w.wg.Wait()
 }

@@ -17,6 +17,7 @@
 package miner
 
 import (
+	"encoding/base64"
 	"math/big"
 	"os"
 	"sync/atomic"
@@ -39,7 +40,9 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/golang/mock/gomock"
 	"github.com/holiman/uint256"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -169,6 +172,34 @@ func newTestWorker(t *testing.T, chainConfig *params.ChainConfig, engine consens
 	return w, backend
 }
 
+func newTestWorkerElder(t *testing.T, chainConfig *params.ChainConfig, engine consensus.Engine, db ethdb.Database, blocks int) (*worker, *testWorkerBackend) {
+	backend := newTestWorkerBackend(t, chainConfig, engine, db, blocks)
+	backend.txPool.Add(pendingTxs, true, false)
+
+	// Mock elder client
+	ctrl := gomock.NewController(t)
+
+	elderClientMock := types.NewMockIElderClient(ctrl)
+
+	elderClientMock.EXPECT().Conn().Return(&grpc.ClientConn{}).AnyTimes()
+	elderClientMock.EXPECT().CloseElderClient().Return(nil).AnyTimes()
+	elderClientMock.EXPECT().EnableRollApp(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return().AnyTimes()
+
+	testConfigElder := &Config{
+		Recommit:              time.Second,
+		GasCeil:               params.GenesisGasLimit,
+		ElderSequencerEnabled: true,
+		ElderRollID:           1,
+		ElderRollStartBlock:   3,
+		ElderExecutorPk:       *types.ConvertEcdsaToSecp256k1PrivKey(testBankKey),
+		ElderGrpcClient:       elderClientMock,
+	}
+
+	w := newWorker(testConfigElder, chainConfig, engine, backend, new(event.TypeMux), nil, false)
+	w.setEtherbase(testBankAddress)
+	return w, backend
+}
+
 func TestGenerateAndImportBlock(t *testing.T) {
 	// Added logging to stdout for debugging
 	log.SetDefault(log.NewLogger(log.NewTerminalHandler(os.Stderr, true)))
@@ -204,6 +235,135 @@ func TestGenerateAndImportBlock(t *testing.T) {
 		b.txPool.Add([]*types.Transaction{b.newRandomTx(true)}, true, false)
 		b.txPool.Add([]*types.Transaction{b.newRandomTx(false)}, true, false)
 
+		select {
+		case ev := <-sub.Chan():
+			block := ev.Data.(core.NewMinedBlockEvent).Block
+			if _, err := chain.InsertChain([]*types.Block{block}); err != nil {
+				t.Fatalf("failed to insert new mined block %d: %v", block.NumberU64(), err)
+			}
+		case <-time.After(3 * time.Second): // Worker needs 1s to include new changes.
+			t.Fatalf("timeout")
+		}
+	}
+}
+
+func txsBase64ToBytes(txsBase64 []string) ([][]byte, error) {
+	txs := make([][]byte, len(txsBase64))
+	for i, txBase64 := range txsBase64 {
+		tx, err := base64.StdEncoding.DecodeString(txBase64)
+		if err != nil {
+			return nil, err
+		}
+		txs[i] = tx
+	}
+	return txs, nil
+}
+
+func TestGenerateAndImportBlockElder(t *testing.T) {
+	// Added logging to stdout for debugging
+	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelInfo, true)))
+
+	t.Parallel()
+	var (
+		db     = rawdb.NewMemoryDatabase()
+		config = *params.AllCliqueProtocolChanges
+	)
+	config.Clique = &params.CliqueConfig{Period: 1, Epoch: 30000}
+	engine := clique.New(config.Clique, db)
+
+	w, b := newTestWorkerElder(t, &config, engine, db, 0)
+	defer w.close()
+
+	// This test chain imports the mined blocks.
+	chain, _ := core.NewBlockChain(rawdb.NewMemoryDatabase(), nil, b.genesis, nil, engine, vm.Config{}, nil, nil)
+	defer chain.Stop()
+
+	// Wait for mined blocks.
+	sub := w.mux.Subscribe(core.NewMinedBlockEvent{})
+	defer sub.Unsubscribe()
+
+	// Start mining!
+	w.start()
+
+	// Sending signal to channel to mimic rollup enabled on Elder
+	w.elderEnableRollAppCh <- struct{}{}
+
+	// Txlist derived from Elder response for the following request:
+
+	// const tx = {
+	// 	to: "0x000000000000000000000000000000000000dead",
+	// 	value: 0
+	//   };
+	// cosmos signer = "elder1p50czqsrzstsu50q073f4upcfmadvknfrufzmz"
+	// signer eth addy = "0x00816f8e1b177ab540be8c38c7d2c8eb55d56a79"
+
+	// {
+	// 	"roll_id": "2",
+	// 	"txs": {
+	// 	"block": "3843420",
+	// 	"tx_list": [
+	// 	"Cn0KewodL2VsZGVyLnJvdXRlci5Nc2dTdWJtaXRSb2xsVHgSWgosZWxkZXIxcDUwY3pxc3J6c3RzdTUwcTA3M2Y0dXBjZm1hZHZrbmZydWZ6bXoQAhoo54CFBKgXyACDD0JAlAAAAAAAAAAAAAAAAAAAAAAAAN6tgICCpxGAgBJqClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiEDha2rv9G4RXTa1YTASxTRiISLtlVJFJWQIpVLykktKGwSBAoCCAEYIBIWChAKBnVlbGRlchIGMjUwMDAwEMCaDBpARDLc50ycOdw1ADFO4H5Fp/xH0O6S2AtD/cWKAHaN7s4RtXJkfTJ9njQyEBXXkln1pa6QDJlkdpVDtrHL/xxw2Q=="
+	// 	]
+	// 	},
+	// 	"current_height": "3843430"
+	// 	}
+
+	txList := []string{"Cn0KewodL2VsZGVyLnJvdXRlci5Nc2dTdWJtaXRSb2xsVHgSWgosZWxkZXIxcDUwY3pxc3J6c3RzdTUwcTA3M2Y0dXBjZm1hZHZrbmZydWZ6bXoQAhoo54CFBKgXyACDD0JAlAAAAAAAAAAAAAAAAAAAAAAAAN6tgICCpxGAgBJqClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiEDha2rv9G4RXTa1YTASxTRiISLtlVJFJWQIpVLykktKGwSBAoCCAEYIBIWChAKBnVlbGRlchIGMjUwMDAwEMCaDBpARDLc50ycOdw1ADFO4H5Fp/xH0O6S2AtD/cWKAHaN7s4RtXJkfTJ9njQyEBXXkln1pa6QDJlkdpVDtrHL/xxw2Q=="}
+
+	// Convert base64 encoded transactions to bytes
+	txListBytes, err := txsBase64ToBytes(txList)
+	if err != nil {
+		t.Fatalf("Error : %s", err)
+	}
+	// empty transactions response from Elder
+	w.config.ElderGrpcClient.(*types.MockIElderClient).EXPECT().QueryFromElder(gomock.Any(), gomock.Any(), gomock.Any()).Return(txListBytes, nil).AnyTimes()
+
+	for i := 0; i < 5; i++ {
+		select {
+		case ev := <-sub.Chan():
+			block := ev.Data.(core.NewMinedBlockEvent).Block
+			if _, err := chain.InsertChain([]*types.Block{block}); err != nil {
+				t.Fatalf("failed to insert new mined block %d: %v", block.NumberU64(), err)
+			}
+		case <-time.After(3 * time.Second): // Worker needs 1s to include new changes.
+			t.Fatalf("timeout")
+		}
+	}
+}
+
+func TestGenerateAndImportBlockElderEmptyTxs(t *testing.T) {
+	// Added logging to stdout for debugging
+	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelInfo, true)))
+
+	t.Parallel()
+	var (
+		db     = rawdb.NewMemoryDatabase()
+		config = *params.AllCliqueProtocolChanges
+	)
+	config.Clique = &params.CliqueConfig{Period: 1, Epoch: 30000}
+	engine := clique.New(config.Clique, db)
+
+	w, b := newTestWorkerElder(t, &config, engine, db, 0)
+	defer w.close()
+
+	// This test chain imports the mined blocks.
+	chain, _ := core.NewBlockChain(rawdb.NewMemoryDatabase(), nil, b.genesis, nil, engine, vm.Config{}, nil, nil)
+	defer chain.Stop()
+
+	// Wait for mined blocks.
+	sub := w.mux.Subscribe(core.NewMinedBlockEvent{})
+	defer sub.Unsubscribe()
+
+	// Start mining!
+	w.start()
+
+	// Sending signal to channel to mimic rollup enabled on Elder
+	w.elderEnableRollAppCh <- struct{}{}
+
+	// empty transactions response from Elder
+	w.config.ElderGrpcClient.(*types.MockIElderClient).EXPECT().QueryFromElder(gomock.Any(), gomock.Any(), gomock.Any()).Return([][]byte{}, nil).AnyTimes()
+
+	for i := 0; i < 5; i++ {
 		select {
 		case ev := <-sub.Chan():
 			block := ev.Data.(core.NewMinedBlockEvent).Block
