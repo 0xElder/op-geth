@@ -371,8 +371,8 @@ func (tx *Transaction) ElderOuterTx() []byte {
 // IsElderDoubleSignedInnerTx returns true if the elder tx (cosmos tx) contains a signed eth tx
 func (tx *Transaction) IsElderDoubleSignedInnerTx() bool {
 	if txData, ok := tx.inner.(*ElderInnerTx); ok {
-		v, r, s := txData.rawSignatureValues()
-		if v.Int64() != 0 && r.Int64() != 0 && s.Int64() != 0 {
+		_, r, s := txData.rawSignatureValues()
+		if r.Int64() != 0 && s.Int64() != 0 {
 			return true
 		}
 		return false

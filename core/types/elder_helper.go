@@ -118,7 +118,7 @@ func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint
 
 	// If the transaction is not signed, set the nonce to 0
 	// keep nonce unchanged for double signed tx
-	if !(v.Int64() != 0 && r.Int64() != 0 && s.Int64() != 0) {
+	if r.Int64() == 0 || s.Int64() == 0 {
 		nonce = 0
 	}
 
