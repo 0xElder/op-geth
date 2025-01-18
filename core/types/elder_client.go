@@ -26,6 +26,11 @@ func (ec ElderClient) QueryElderRollApp(rollId uint64) (*registrationtypes.Roll,
 	return elderutils.QueryElderRollApp(registrationtypes.NewQueryClient(ec.conn), rollId)
 }
 
+// QueryElderChainID implements IElderClient.
+func (ec ElderClient) QueryElderChainID() string {
+	return elderutils.QueryElderChainID(elderutils.TmClient(ec.conn))
+}
+
 // EnableRollApp implements IElderClient.
 func (ec ElderClient) EnableRollApp(rollId uint64, rollStartBlock uint64, executorPk *elderutils.Secp256k1PrivateKey, elderEnableRollAppCh chan struct{}) {
 	executorAddress := elderutils.CosmosPublicKeyToBech32Address("elder", executorPk.PubKey())
@@ -56,7 +61,7 @@ func (ec ElderClient) QueryElderForSeqencedBlock(rollId uint64, rollAppBlockNumb
 	// Fetch the tx list
 	blockReq := &routertypes.QueryTxsByBlockRequest{
 		RollId: rollId,
-		Block:  int64(rollAppBlockNumber),
+		Block:  uint64(rollAppBlockNumber),
 	}
 
 	blockRes, err := routerClient.TxsByBlock(ctx, blockReq)

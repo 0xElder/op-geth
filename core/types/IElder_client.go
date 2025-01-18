@@ -11,6 +11,7 @@ import (
 
 type IElderClient interface {
 	EnableRollApp(rollId uint64, rollStartBlock uint64, executorPk *elderutils.Secp256k1PrivateKey, elderEnableRollAppCh chan struct{})
+	QueryElderChainID() string
 	QueryFromElder(rollAppEnabled bool, currBlock uint64, rollId uint64) ([][]byte, error)
 	QueryElderForSeqencedBlock(rollId, rollAppBlockNumber uint64) (*routertypes.QueryTxsByBlockResponse, error)
 	QueryElderRollApp(rollId uint64) (*registrationtypes.Roll, error)

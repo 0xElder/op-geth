@@ -131,6 +131,7 @@ var (
 		utils.MinerNewPayloadTimeout,
 		utils.ElderSequencerEnabledFlag,
 		utils.ElderSeqURLFlag,
+		utils.ElderChainIDFlag,
 		utils.ElderRollIDFlag,
 		utils.ElderRollStartBlockFlag,
 		utils.ElderExecutorPkFlag,
