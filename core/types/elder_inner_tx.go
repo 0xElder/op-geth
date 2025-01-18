@@ -45,6 +45,7 @@ type ElderInnerTx struct {
 	ElderAccountSequence uint64
 	ElderPublicKey       string
 	ElderStatus          bool // default true
+	ElderDoubleSigned    bool // default false
 }
 
 // copy creates a deep copy of the transaction data and initializes all fields.
