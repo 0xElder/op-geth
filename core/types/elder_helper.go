@@ -6,16 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 
-	"github.com/0xElder/elder/utils"
 	elderutils "github.com/0xElder/elder/utils"
 	routertypes "github.com/0xElder/elder/x/router/types"
 	"github.com/cosmos/gogoproto/proto"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 var (
@@ -40,10 +39,10 @@ type ElderGetTxByBlockResponseInvalid struct {
 	Details []interface{} `json:"details"`
 }
 
-func TxsBytesToTxs(txs [][]byte, chainID *big.Int) ([]*Transaction, error) {
+func TxsBytesToTxs(txs [][]byte, chainConfig *params.ChainConfig) ([]*Transaction, error) {
 	elderInnerTxs := make([]*Transaction, len(txs))
 	for i, txBytes := range txs {
-		elderInnerTx, err := ElderTxToElderInnerTx(txBytes, chainID)
+		elderInnerTx, err := ElderTxToElderInnerTx(txBytes, chainConfig)
 		if err != nil {
 			return []*Transaction{}, err
 		}
@@ -98,13 +97,13 @@ func ElderTxToEthTx(rawElderTxBytes []byte) (*Transaction, uint64, string, error
 	return &tx, accSeq, accPublicKeyStr, nil
 }
 
-func ElderTxToElderInnerTx(rawElderTxBytes []byte, chainID *big.Int) (*Transaction, error) {
+func ElderTxToElderInnerTx(rawElderTxBytes []byte, chainConfig *params.ChainConfig) (*Transaction, error) {
 	tx, accSeq, accPublicKeyStr, err := ElderTxToEthTx(rawElderTxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid transaction2 %+v: %v", rawElderTxBytes, err)
 	}
 
-	elderInnerTx, err := LegacyTxToElderInnerTx(tx, rawElderTxBytes, accSeq, accPublicKeyStr, chainID)
+	elderInnerTx, err := LegacyTxToElderInnerTx(tx, rawElderTxBytes, accSeq, accPublicKeyStr, chainConfig)
 	if err != nil {
 		return nil, fmt.Errorf("invalid transaction5 %+v: %v", tx, err)
 	}
@@ -112,7 +111,7 @@ func ElderTxToElderInnerTx(rawElderTxBytes []byte, chainID *big.Int) (*Transacti
 	return elderInnerTx, nil
 }
 
-func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint64, accPublicKeyStr string, chainID *big.Int) (*Transaction, error) {
+func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint64, accPublicKeyStr string, chainConfig *params.ChainConfig) (*Transaction, error) {
 	v, r, s := tx.RawSignatureValues()
 	nonce := tx.Nonce()
 
@@ -122,8 +121,19 @@ func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint
 		nonce = 0
 	}
 
+	elderDoubleSigned := false
+
+	signer := LatestSigner(chainConfig)
+	originalAddr, err := signer.Sender(tx)
+	if err == nil {
+		elderTxAddr, _ := ElderTxSender(rawElderTxBytes)
+		if elderTxAddr.Cmp(originalAddr) == 0 {
+			elderDoubleSigned = true
+		}
+	}
+
 	inner := NewTx(&ElderInnerTx{
-		ChainID:              chainID,
+		ChainID:              chainConfig.ChainID,
 		Gas:                  tx.Gas(),
 		To:                   tx.To(),
 		Value:                tx.Value(),
@@ -137,6 +147,7 @@ func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint
 		ElderAccountSequence: accSeq,
 		ElderPublicKey:       accPublicKeyStr,
 		ElderStatus:          true,
+		ElderDoubleSigned:    elderDoubleSigned,
 	})
 
 	fmt.Println("elder inner txHash", inner.Hash().Hex())
@@ -207,6 +218,35 @@ func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 	return common.HexToAddress(ethAddr), nil
 }
 
+func ElderTxSender(elderTxBytes []byte) (common.Address, error) {
+	elderOuterTx, err := BytesToCosmosTx(elderTxBytes)
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	signerCosmos := elderOuterTx.GetAuthInfo()
+
+	cosmosPubKey := &elderutils.Secp256k1PublicKey{}
+	err = proto.Unmarshal(signerCosmos.SignerInfos[0].PublicKey.Value, cosmosPubKey)
+	if err != nil {
+		panic(err)
+	}
+
+	cosmosPubKeyStr := hex.EncodeToString(cosmosPubKey.Key)
+
+	ethPubKey, err := CosmosPubKeyToEthPubkey(cosmosPubKeyStr)
+	if err != nil {
+		panic(err)
+	}
+
+	ethAddr, err := EthPubKeyToEthAddr(ethPubKey)
+	if err != nil {
+		panic(err)
+	}
+
+	return common.HexToAddress(ethAddr), nil
+}
+
 // TODO : @anshalshukla - Refactor this function
 func ExtractErrorFromQueryResponse(message string) error {
 	if strings.Contains(message, fmt.Sprint(routertypes.ErrInvalidStartBlockHeight.ABCICode())) {
@@ -220,7 +260,7 @@ func ExtractErrorFromQueryResponse(message string) error {
 	}
 }
 
-func ConvertEcdsaToSecp256k1PrivKey(ecdsaKey *ecdsa.PrivateKey) *utils.Secp256k1PrivateKey {
+func ConvertEcdsaToSecp256k1PrivKey(ecdsaKey *ecdsa.PrivateKey) *elderutils.Secp256k1PrivateKey {
 	// Convert the D value of the ECDSA private key to a byte slice
 	keyBytes := ecdsaKey.D.Bytes()
 
@@ -233,7 +273,7 @@ func ConvertEcdsaToSecp256k1PrivKey(ecdsaKey *ecdsa.PrivateKey) *utils.Secp256k1
 	}
 
 	// Create a new secp256k1 private key from the bytes
-	privKey := &utils.Secp256k1PrivateKey{Key: keyBytes}
+	privKey := &elderutils.Secp256k1PrivateKey{Key: keyBytes}
 
 	return privKey
 }
