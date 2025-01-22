@@ -522,6 +522,11 @@ var (
 		Usage:    "URL of the Elder sequencer",
 		Category: flags.MiscCategory,
 	}
+	ElderChainIDFlag = &cli.StringFlag{
+		Name:     "elder-chain-id",
+		Usage:    "Chain ID of the Elder sequencer",
+		Category: flags.MiscCategory,
+	}
 	ElderRollIDFlag = &cli.Uint64Flag{
 		Name:     "elder-roll-id",
 		Usage:    "ID of the Elder sequencer",
@@ -1674,9 +1679,6 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.IsSet(ElderSequencerEnabledFlag.Name) {
 		cfg.ElderSequencerEnabled = ctx.Bool(ElderSequencerEnabledFlag.Name)
 	}
-	if ctx.IsSet(ElderRollIDFlag.Name) {
-		cfg.ElderRollID = ctx.Uint64(ElderRollIDFlag.Name)
-	}
 
 	// Validity checks for elder sequencer, if enabled
 	if cfg.ElderSequencerEnabled {
@@ -1710,6 +1712,12 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 		// If roll is not enabled, then the elder roll start block and executor pk must be set
 		if !roll.Enabled && (!ctx.IsSet(ElderRollStartBlockFlag.Name) || !ctx.IsSet(ElderExecutorPkFlag.Name)) {
 			Fatalf("Roll app is not enabled, but start block or executor pk is not set")
+		}
+
+		cfg.ElderChainID = cfg.ElderGrpcClient.QueryElderChainID()
+
+		if ctx.IsSet(ElderChainIDFlag.Name) && cfg.ElderChainID != ctx.String(ElderChainIDFlag.Name) {
+			Fatalf("Roll app chain id mismatch: %s != %s", cfg.ElderChainID, ctx.String(ElderChainIDFlag.Name))
 		}
 
 		// If roll is enabled and elder roll start block is not set, then set it

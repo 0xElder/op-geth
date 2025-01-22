@@ -76,7 +76,14 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 			}
 		}
 
-		txs, err := types.TxsBytesToTxs(resp, w.chainConfig)
+		// Verify the signatures of the txs
+		err = types.VerifyElderTxsSignature(resp, w.config.ElderChainID)
+		if err != nil {
+			log.Crit("Failed to verify elder sigs", "err", err)
+		}
+
+		// Convert the txs to ElderInnerTx types.Transaction
+		txs, err := types.TxsBytesToElderInnerTxs(resp, w.chainConfig, w.config.ElderChainID)
 		if err != nil {
 			log.Crit("Failed to convert txs to bytes", "err", err)
 		}
