@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 
 	elderutils "github.com/0xElder/elder/utils"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 var (
@@ -24,6 +24,7 @@ var (
 	ErrElderRollAppNotEnabled         = errors.New("rollup app not enabled")
 )
 
+// ElderGetTxByBlockResponse represents response from Elcer when we query for transactions by block for a rollup
 type ElderGetTxByBlockResponse struct {
 	RollID string `json:"rollId"`
 	Txs    struct {
@@ -33,29 +34,35 @@ type ElderGetTxByBlockResponse struct {
 	CurrentHeight string `json:"currentHeight"`
 }
 
+// ElderGetTxByBlockResponseInvalid represents response from Elcer when we query for transactions by block for a rollup and the response is invalid
 type ElderGetTxByBlockResponseInvalid struct {
 	Code    int           `json:"code"`
 	Message string        `json:"message"`
 	Details []interface{} `json:"details"`
 }
 
-func TxsBytesToTxs(txs [][]byte, chainID *big.Int, elderChainId string) ([]*Transaction, error) {
-	// Verify the signatures of the txs
+// VerifyElderTxsSignature verifies the signature of the elder(cosmos) transactions
+func VerifyElderTxsSignature(txs [][]byte, elderChainId string) error {
 	for _, txBytes := range txs {
 		tx, err := elderutils.BytesToCosmosTx(txBytes)
 		if err != nil {
-			return []*Transaction{}, fmt.Errorf("unable to unmarshal tx %+v: %v", txBytes, err)
+			return fmt.Errorf("unable to unmarshal tx %+v: %v", txBytes, err)
 		}
 
 		err = elderutils.VerifyRollMsgTxSignature(context.Background(), tx, elderChainId)
 		if err != nil {
-			return []*Transaction{}, fmt.Errorf("tx signature verification failed %+v: %v", txBytes, err)
+			return fmt.Errorf("tx signature verification failed %+v: %v", txs, err)
 		}
 	}
 
+	return nil
+}
+
+// TxsBytesToTxs converts the bytes of the elder transactions to the ethereum ElderInnerTx transactions
+func TxsBytesToElderInnerTxs(txs [][]byte, chainConfig *params.ChainConfig, elderChainId string) ([]*Transaction, error) {
 	elderInnerTxs := make([]*Transaction, len(txs))
 	for i, txBytes := range txs {
-		elderInnerTx, err := ElderTxToElderInnerTx(txBytes, chainID)
+		elderInnerTx, err := ElderTxToElderInnerTx(txBytes, chainConfig)
 		if err != nil {
 			return []*Transaction{}, err
 		}
@@ -65,6 +72,7 @@ func TxsBytesToTxs(txs [][]byte, chainID *big.Int, elderChainId string) ([]*Tran
 	return elderInnerTxs, nil
 }
 
+// BytesToBase64 converts the bytes to base64 string
 func Base64toBytes(in string) ([]byte, error) {
 	out, err := base64.StdEncoding.DecodeString(in)
 	if err != nil {
@@ -74,6 +82,7 @@ func Base64toBytes(in string) ([]byte, error) {
 	return out, nil
 }
 
+// ElderTxToEthTx converts the elder transaction to ethereum transaction
 func ElderTxToEthTx(rawElderTxBytes []byte) (*Transaction, uint64, string, error) {
 	elderTx, err := elderutils.BytesToCosmosTx(rawElderTxBytes)
 	if err != nil {
@@ -113,13 +122,14 @@ func ElderTxToEthTx(rawElderTxBytes []byte) (*Transaction, uint64, string, error
 	return &tx, accSeq, accPublicKeyStr, nil
 }
 
-func ElderTxToElderInnerTx(rawElderTxBytes []byte, chainID *big.Int) (*Transaction, error) {
+// ElderTxToElderInnerTx converts the elder transaction to ethereum ElderInnerTx transaction
+func ElderTxToElderInnerTx(rawElderTxBytes []byte, chainConfig *params.ChainConfig) (*Transaction, error) {
 	tx, accSeq, accPublicKeyStr, err := ElderTxToEthTx(rawElderTxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid transaction2 %+v: %v", rawElderTxBytes, err)
 	}
 
-	elderInnerTx, err := LegacyTxToElderInnerTx(tx, rawElderTxBytes, accSeq, accPublicKeyStr, chainID)
+	elderInnerTx, err := LegacyTxToElderInnerTx(tx, rawElderTxBytes, accSeq, accPublicKeyStr, chainConfig)
 	if err != nil {
 		return nil, fmt.Errorf("invalid transaction5 %+v: %v", tx, err)
 	}
@@ -127,7 +137,8 @@ func ElderTxToElderInnerTx(rawElderTxBytes []byte, chainID *big.Int) (*Transacti
 	return elderInnerTx, nil
 }
 
-func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint64, accPublicKeyStr string, chainID *big.Int) (*Transaction, error) {
+// LegacyTxToElderInnerTx converts the ethereum transaction to ethereum ElderInnerTx transaction
+func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint64, accPublicKeyStr string, chainConfig *params.ChainConfig) (*Transaction, error) {
 	v, r, s := tx.RawSignatureValues()
 	nonce := tx.Nonce()
 
@@ -137,8 +148,19 @@ func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint
 		nonce = 0
 	}
 
+	elderDoubleSigned := false
+
+	signer := LatestSigner(chainConfig)
+	originalAddr, err := signer.Sender(tx)
+	if err == nil {
+		elderTxAddr, _ := ElderTxSender(rawElderTxBytes)
+		if elderTxAddr.Cmp(originalAddr) == 0 {
+			elderDoubleSigned = true
+		}
+	}
+
 	inner := NewTx(&ElderInnerTx{
-		ChainID:              chainID,
+		ChainID:              chainConfig.ChainID,
 		Gas:                  tx.Gas(),
 		To:                   tx.To(),
 		Value:                tx.Value(),
@@ -152,12 +174,14 @@ func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint
 		ElderAccountSequence: accSeq,
 		ElderPublicKey:       accPublicKeyStr,
 		ElderStatus:          true,
+		ElderDoubleSigned:    elderDoubleSigned,
 	})
 
 	fmt.Println("elder inner txHash", inner.Hash().Hex())
 	return inner, nil
 }
 
+// CosmosPubKeyToEthPubkey converts the cosmos public key to ethereum public key
 func CosmosPubKeyToEthPubkey(pubKey string) (string, error) {
 	// Decode the public key from hex
 	pubKeyBytes, err := hex.DecodeString(pubKey)
@@ -174,6 +198,7 @@ func CosmosPubKeyToEthPubkey(pubKey string) (string, error) {
 	return hex.EncodeToString(crypto.FromECDSAPub(publicKey)), nil
 }
 
+// EthPubKeyToEthAddr converts the ethereum public key to ethereum address
 func EthPubKeyToEthAddr(pubKey string) (string, error) {
 	// Decode the public key from hex
 	pubKeyBytes, err := hex.DecodeString(pubKey)
@@ -192,9 +217,16 @@ func EthPubKeyToEthAddr(pubKey string) (string, error) {
 	return address.Hex(), nil
 }
 
+// ElderInnerTxSender returns the sender of the ethereum ElderInnerTx transaction
 func ElderInnerTxSender(tx *Transaction) (common.Address, error) {
 	elderInnerTx := tx.inner.(*ElderInnerTx)
-	elderOuterTx, err := elderutils.BytesToCosmosTx(elderInnerTx.ElderOuterTx)
+
+	return ElderTxSender(elderInnerTx.ElderOuterTx)
+}
+
+// ElderTxSender returns the sender of the elder(cosmos) transaction
+func ElderTxSender(elderTxBytes []byte) (common.Address, error) {
+	elderOuterTx, err := elderutils.BytesToCosmosTx(elderTxBytes)
 	if err != nil {
 		return common.Address{}, err
 	}
@@ -238,6 +270,7 @@ func ExtractErrorFromQueryResponse(message string) error {
 	}
 }
 
+// ConvertEcdsaToSecp256k1PrivKey converts the ECDSA private key to secp256k1 private key
 func ConvertEcdsaToSecp256k1PrivKey(ecdsaKey *ecdsa.PrivateKey) *elderutils.Secp256k1PrivateKey {
 	// Convert the D value of the ECDSA private key to a byte slice
 	keyBytes := ecdsaKey.D.Bytes()
