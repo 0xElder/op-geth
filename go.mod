@@ -3,7 +3,7 @@ module github.com/ethereum/go-ethereum
 go 1.22.6
 
 require (
-	github.com/0xElder/elder v0.1.1-0.20250118123251-de232549eba8
+	github.com/0xElder/elder v0.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.2.0
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/VictoriaMetrics/fastcache v1.12.1
