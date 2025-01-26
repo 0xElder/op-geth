@@ -1679,6 +1679,9 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.IsSet(ElderSequencerEnabledFlag.Name) {
 		cfg.ElderSequencerEnabled = ctx.Bool(ElderSequencerEnabledFlag.Name)
 	}
+	if ctx.IsSet(ElderRollIDFlag.Name) {
+		cfg.ElderRollID = ctx.Uint64(ElderRollIDFlag.Name)
+	}
 
 	// Validity checks for elder sequencer, if enabled
 	if cfg.ElderSequencerEnabled {
