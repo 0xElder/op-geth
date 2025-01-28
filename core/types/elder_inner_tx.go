@@ -66,6 +66,7 @@ func (tx *ElderInnerTx) copy() TxData {
 		ElderAccountSequence: tx.ElderAccountSequence,
 		ElderPublicKey:       tx.ElderPublicKey,
 		ElderStatus:          tx.ElderStatus,
+		ElderDoubleSigned:    tx.ElderDoubleSigned,
 	}
 	copy(cpy.AccessList, tx.AccessList)
 	if tx.Value != nil {
