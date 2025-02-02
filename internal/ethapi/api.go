@@ -1307,6 +1307,11 @@ func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNr
 // configuration (if non-zero).
 // Note: Required blob gas is not computed in this method.
 func (s *BlockChainAPI) EstimateGas(ctx context.Context, args TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, overrides *StateOverride) (hexutil.Uint64, error) {
+	// If elder is enabled, the gasPrice for a tx on rollup is 0
+	if s.b.IsElderEnabled(*blockNrOrHash.BlockNumber) {
+		return 0, nil
+	}
+
 	bNrOrHash := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 	if blockNrOrHash != nil {
 		bNrOrHash = *blockNrOrHash

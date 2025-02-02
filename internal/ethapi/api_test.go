@@ -788,6 +788,10 @@ func (b testBackend) Genesis() *types.Block {
 	panic("implement me")
 }
 
+func (b testBackend) IsElderEnabled(number rpc.BlockNumber) bool {
+	return false
+}
+
 func TestEstimateGas(t *testing.T) {
 	t.Parallel()
 	// Initialize test accounts
