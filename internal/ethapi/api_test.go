@@ -788,7 +788,7 @@ func (b testBackend) Genesis() *types.Block {
 	panic("implement me")
 }
 
-func (b testBackend) IsElderEnabled(number rpc.BlockNumber) bool {
+func (b testBackend) IsElderEnabled(number uint64) bool {
 	return false
 }
 

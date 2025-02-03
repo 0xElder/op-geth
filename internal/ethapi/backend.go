@@ -101,7 +101,7 @@ type Backend interface {
 	ServiceFilter(ctx context.Context, session *bloombits.MatcherSession)
 
 	// Elder specific
-	IsElderEnabled(number rpc.BlockNumber) bool
+	IsElderEnabled(number uint64) bool
 }
 
 func GetAPIs(apiBackend Backend) []rpc.API {

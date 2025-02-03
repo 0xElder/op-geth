@@ -70,6 +70,9 @@ func NewEthereumAPI(b Backend) *EthereumAPI {
 
 // GasPrice returns a suggestion for a gas price for legacy transactions.
 func (s *EthereumAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
+	if s.b.IsElderEnabled(s.b.CurrentBlock().Number.Uint64()) {
+		return (*hexutil.Big)(big.NewInt(0)), nil
+	}
 	tipcap, err := s.b.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, err
@@ -82,6 +85,9 @@ func (s *EthereumAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 
 // MaxPriorityFeePerGas returns a suggestion for a gas tip cap for dynamic fee transactions.
 func (s *EthereumAPI) MaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, error) {
+	if s.b.IsElderEnabled(s.b.CurrentBlock().Number.Uint64()) {
+		return (*hexutil.Big)(big.NewInt(0)), nil
+	}
 	tipcap, err := s.b.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, err
@@ -96,8 +102,19 @@ type feeHistoryResult struct {
 	GasUsedRatio []float64        `json:"gasUsedRatio"`
 }
 
+var zeroFeeHistoryResult = &feeHistoryResult{
+	OldestBlock:  (*hexutil.Big)(big.NewInt(0)),
+	Reward:       nil,
+	BaseFee:      nil,
+	GasUsedRatio: nil,
+}
+
 // FeeHistory returns the fee market history.
 func (s *EthereumAPI) FeeHistory(ctx context.Context, blockCount math.HexOrDecimal64, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (*feeHistoryResult, error) {
+	if s.b.IsElderEnabled(uint64(lastBlock.Int64()) + 1) {
+		return zeroFeeHistoryResult, nil
+	}
+
 	oldest, reward, baseFee, gasUsed, err := s.b.FeeHistory(ctx, uint64(blockCount), lastBlock, rewardPercentiles)
 	if err != nil {
 		return nil, err
@@ -1310,11 +1327,6 @@ func (s *BlockChainAPI) EstimateGas(ctx context.Context, args TransactionArgs, b
 	bNrOrHash := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 	if blockNrOrHash != nil {
 		bNrOrHash = *blockNrOrHash
-	}
-
-	// If elder is enabled, the gasPrice for a tx on rollup is 0
-	if s.b.IsElderEnabled(*bNrOrHash.BlockNumber) {
-		return 0, nil
 	}
 
 	header, err := headerByNumberOrHash(ctx, s.b, bNrOrHash)

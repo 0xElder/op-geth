@@ -60,11 +60,11 @@ func (b *EthAPIBackend) ChainConfig() *params.ChainConfig {
 }
 
 // IsElderEnabled
-func (b *EthAPIBackend) IsElderEnabled(number rpc.BlockNumber) bool {
+func (b *EthAPIBackend) IsElderEnabled(number uint64) bool {
 	elderEnableBlock := b.eth.config.Miner.ElderRollStartBlock
 	elderSequencerEnabled := b.eth.config.Miner.ElderSequencerEnabled
 
-	if elderSequencerEnabled && uint64(number.Int64()) >= elderEnableBlock {
+	if elderSequencerEnabled && number >= elderEnableBlock {
 		return true
 	}
 
