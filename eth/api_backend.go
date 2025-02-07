@@ -59,6 +59,18 @@ func (b *EthAPIBackend) ChainConfig() *params.ChainConfig {
 	return b.eth.blockchain.Config()
 }
 
+// IsElderEnabled
+func (b *EthAPIBackend) IsElderEnabled(number uint64) bool {
+	elderEnableBlock := b.eth.config.Miner.ElderRollStartBlock
+	elderSequencerEnabled := b.eth.config.Miner.ElderSequencerEnabled
+
+	if elderSequencerEnabled && number >= elderEnableBlock {
+		return true
+	}
+
+	return false
+}
+
 func (b *EthAPIBackend) CurrentBlock() *types.Header {
 	return b.eth.blockchain.CurrentBlock()
 }
