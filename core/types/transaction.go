@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+	"golang.org/x/crypto/sha3"
 )
 
 var (
@@ -361,6 +362,21 @@ func (tx *Transaction) IsElderInnerTx() bool {
 	return tx.Type() == ElderInnerTxType
 }
 
+// ElderPublicKey returns the public key associated with the elder transaction.
+func (tx *Transaction) ElderPublicKey() string {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderPublicKey
+	}
+	return ""
+}
+
+func (tx *Transaction) ElderAccountSequence() uint64 {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderAccountSequence
+	}
+	return 0
+}
+
 func (tx *Transaction) ElderOuterTx() []byte {
 	if txData, ok := tx.inner.(*ElderInnerTx); ok {
 		return txData.ElderOuterTx
@@ -578,6 +594,59 @@ func (tx *Transaction) Time() time.Time {
 	return tx.time
 }
 
+type ElderInnerTxHashNonDST struct {
+	ChainID    *big.Int
+	Nonce      uint64
+	Gas        uint64
+	To         *common.Address `rlp:"nil"` // nil means contract creation
+	Value      *big.Int
+	Data       []byte
+	AccessList AccessList
+
+	// Signature values
+	V *big.Int
+	R *big.Int
+	S *big.Int
+
+	ElderPublicKey       string
+	ElderAccountSequence uint64
+}
+
+func CalculateElderNonDSTtxHash(tx *Transaction) (common.Hash, error) {
+	v, r, s := tx.RawSignatureValues()
+
+	txData := ElderInnerTxHashNonDST{
+		ChainID:    tx.ChainId(),
+		Nonce:      tx.Nonce(),
+		Gas:        tx.Gas(),
+		To:         tx.To(),
+		Value:      tx.Value(),
+		Data:       tx.Data(),
+		AccessList: tx.AccessList(),
+
+		V: v,
+		R: r,
+		S: s,
+
+		ElderPublicKey:       tx.ElderPublicKey(),
+		ElderAccountSequence: tx.ElderAccountSequence(),
+	}
+
+	// RLP encode the selected fields
+	encodedTx, err := rlp.EncodeToBytes(txData)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	// Hash the encoded data
+	hasher := sha3.NewLegacyKeccak256()
+	hasher.Write(encodedTx)
+	var hash common.Hash
+	hasher.Sum(hash[:0])
+
+	return hash, nil
+}
+
 // Hash returns the transaction hash.
 func (tx *Transaction) Hash() common.Hash {
 	if hash := tx.hash.Load(); hash != nil {
@@ -585,11 +654,17 @@ func (tx *Transaction) Hash() common.Hash {
 	}
 
 	var h common.Hash
+	var err error
+
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
 	} else if tx.Type() == ElderInnerTxType {
 		if !tx.IsElderDoubleSignedInnerTx() {
-			h = prefixedRlpHash(tx.Type(), tx.inner)
+			h, err = CalculateElderNonDSTtxHash(tx)
+			if err != nil {
+				log.Crit("failed to calculate elder non DST tx hash", "err", err)
+			}
+			// h = prefixedRlpHash(tx.Type(), tx.inner)
 		} else {
 			if !tx.ElderStatus() {
 				h = prefixedRlpHash(tx.Type(), tx.inner)
