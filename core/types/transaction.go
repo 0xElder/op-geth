@@ -603,18 +603,11 @@ type ElderInnerTxHashNonDST struct {
 	Data       []byte
 	AccessList AccessList
 
-	// Signature values
-	V *big.Int
-	R *big.Int
-	S *big.Int
-
 	ElderPublicKey       string
 	ElderAccountSequence uint64
 }
 
-func CalculateElderNonDSTtxHash(tx *Transaction) (common.Hash, error) {
-	v, r, s := tx.RawSignatureValues()
-
+func CalculateElderNonDSTtxHash(tx *Transaction) common.Hash {
 	txData := ElderInnerTxHashNonDST{
 		ChainID:    tx.ChainId(),
 		Nonce:      tx.Nonce(),
@@ -624,10 +617,6 @@ func CalculateElderNonDSTtxHash(tx *Transaction) (common.Hash, error) {
 		Data:       tx.Data(),
 		AccessList: tx.AccessList(),
 
-		V: v,
-		R: r,
-		S: s,
-
 		ElderPublicKey:       tx.ElderPublicKey(),
 		ElderAccountSequence: tx.ElderAccountSequence(),
 	}
@@ -635,7 +624,7 @@ func CalculateElderNonDSTtxHash(tx *Transaction) (common.Hash, error) {
 	// RLP encode the selected fields
 	encodedTx, err := rlp.EncodeToBytes(txData)
 	if err != nil {
-		return common.Hash{}, err
+		return common.Hash{}
 	}
 
 	// Hash the encoded data
@@ -644,7 +633,7 @@ func CalculateElderNonDSTtxHash(tx *Transaction) (common.Hash, error) {
 	var hash common.Hash
 	hasher.Sum(hash[:0])
 
-	return hash, nil
+	return hash
 }
 
 // Hash returns the transaction hash.
@@ -654,17 +643,11 @@ func (tx *Transaction) Hash() common.Hash {
 	}
 
 	var h common.Hash
-	var err error
-
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
 	} else if tx.Type() == ElderInnerTxType {
 		if !tx.IsElderDoubleSignedInnerTx() {
-			h, err = CalculateElderNonDSTtxHash(tx)
-			if err != nil {
-				log.Crit("failed to calculate elder non DST tx hash", "err", err)
-			}
-			// h = prefixedRlpHash(tx.Type(), tx.inner)
+			h = CalculateElderNonDSTtxHash(tx)
 		} else {
 			if !tx.ElderStatus() {
 				h = prefixedRlpHash(tx.Type(), tx.inner)
