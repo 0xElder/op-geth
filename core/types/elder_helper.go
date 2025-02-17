@@ -142,12 +142,6 @@ func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint
 	v, r, s := tx.RawSignatureValues()
 	nonce := tx.Nonce()
 
-	// If the transaction is not signed, set the nonce to 0
-	// keep nonce unchanged for double signed tx
-	if r.Int64() == 0 || s.Int64() == 0 {
-		nonce = 0
-	}
-
 	elderDoubleSigned := false
 
 	signer := LatestSigner(chainConfig)
@@ -156,7 +150,11 @@ func LegacyTxToElderInnerTx(tx *Transaction, rawElderTxBytes []byte, accSeq uint
 		elderTxAddr, _ := ElderTxSender(rawElderTxBytes)
 		if elderTxAddr.Cmp(originalAddr) == 0 {
 			elderDoubleSigned = true
+		} else {
+			nonce = 0
 		}
+	} else {
+		nonce = 0
 	}
 
 	inner := NewTx(&ElderInnerTx{
