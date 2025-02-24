@@ -41,12 +41,11 @@ func (w *worker) fillElderTransactions(interrupt *atomic.Int32, env *environment
 			go w.enableRollApp()
 		}
 
-		if currentBlock == rollappStartBlock {
-			select {
-			case <-w.elderEnableRollAppCh:
-				log.Info("Roll App sequencing enabled on elder")
-				w.config.ElderRollAppEnabled = true
-			}
+		// since the enable rollapp tx was sent in the previous block, we need to wait for the rollapp to be enabled on elder
+		if currentBlock == rollappStartBlock-1 {
+			<-w.elderEnableRollAppCh
+			log.Info("Roll App sequencing enabled on elder")
+			w.config.ElderRollAppEnabled = true
 		}
 	}
 
