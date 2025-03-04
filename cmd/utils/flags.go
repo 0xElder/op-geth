@@ -530,7 +530,6 @@ var (
 	ElderRollIDFlag = &cli.Uint64Flag{
 		Name:     "elder-roll-id",
 		Usage:    "ID of the Elder sequencer",
-		Value:    0,
 		Category: flags.MiscCategory,
 	}
 	ElderRollStartBlockFlag = &cli.Uint64Flag{

@@ -84,7 +84,7 @@ var DefaultConfig = Config{
 	// run 3 rounds.
 	Recommit:              2 * time.Second,
 	NewPayloadTimeout:     2 * time.Second,
-	ElderSequencerEnabled: true,
+	ElderSequencerEnabled: false,
 }
 
 // Miner creates blocks and searches for proof-of-work values.
