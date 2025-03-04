@@ -1675,12 +1675,12 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.IsSet(RollupComputePendingBlock.Name) {
 		cfg.RollupComputePendingBlock = ctx.Bool(RollupComputePendingBlock.Name)
 	}
-	if ctx.IsSet(ElderSequencerEnabledFlag.Name) {
-		cfg.ElderSequencerEnabled = ctx.Bool(ElderSequencerEnabledFlag.Name)
-	}
 	if ctx.IsSet(ElderRollIDFlag.Name) {
 		cfg.ElderRollID = ctx.Uint64(ElderRollIDFlag.Name)
 	}
+
+	// sets the elder sequencer enabled flag to false if the elder roll id is not set
+	cfg.ElderSequencerEnabled = ctx.Bool(ElderSequencerEnabledFlag.Name)
 
 	// Validity checks for elder sequencer, if enabled
 	if cfg.ElderSequencerEnabled {
