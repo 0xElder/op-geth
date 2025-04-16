@@ -70,6 +70,9 @@ func NewEthereumAPI(b Backend) *EthereumAPI {
 
 // GasPrice returns a suggestion for a gas price for legacy transactions.
 func (s *EthereumAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
+	if s.b.IsElderEnabled(s.b.CurrentBlock().Number.Uint64()) {
+		return (*hexutil.Big)(big.NewInt(0)), nil
+	}
 	tipcap, err := s.b.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, err
@@ -82,6 +85,9 @@ func (s *EthereumAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 
 // MaxPriorityFeePerGas returns a suggestion for a gas tip cap for dynamic fee transactions.
 func (s *EthereumAPI) MaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, error) {
+	if s.b.IsElderEnabled(s.b.CurrentBlock().Number.Uint64()) {
+		return (*hexutil.Big)(big.NewInt(0)), nil
+	}
 	tipcap, err := s.b.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, err
@@ -96,8 +102,19 @@ type feeHistoryResult struct {
 	GasUsedRatio []float64        `json:"gasUsedRatio"`
 }
 
+var zeroFeeHistoryResult = &feeHistoryResult{
+	OldestBlock:  (*hexutil.Big)(big.NewInt(0)),
+	Reward:       nil,
+	BaseFee:      nil,
+	GasUsedRatio: nil,
+}
+
 // FeeHistory returns the fee market history.
 func (s *EthereumAPI) FeeHistory(ctx context.Context, blockCount math.HexOrDecimal64, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (*feeHistoryResult, error) {
+	if s.b.IsElderEnabled(uint64(lastBlock.Int64()) + 1) {
+		return zeroFeeHistoryResult, nil
+	}
+
 	oldest, reward, baseFee, gasUsed, err := s.b.FeeHistory(ctx, uint64(blockCount), lastBlock, rewardPercentiles)
 	if err != nil {
 		return nil, err
@@ -1458,6 +1475,9 @@ type RPCTransaction struct {
 	IsSystemTx *bool        `json:"isSystemTx,omitempty"`
 	// deposit-tx post-Canyon only
 	DepositReceiptVersion *hexutil.Uint64 `json:"depositReceiptVersion,omitempty"`
+
+	// Elder
+	ElderOuterTx hexutil.Bytes `json:"elderOuterTx,omitempty"`
 }
 
 // newRPCTransaction returns a transaction that will serialize to the RPC
@@ -1503,6 +1523,12 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 				*result.DepositReceiptVersion = hexutil.Uint64(*receipt.DepositReceiptVersion)
 			}
 		}
+	case types.ElderInnerTxType:
+		result.ElderOuterTx = tx.ElderOuterTx()
+		al := tx.AccessList()
+		result.Accesses = &al
+		result.ChainID = (*hexutil.Big)(tx.ChainId())
+
 	case types.LegacyTxType:
 		if v.Sign() == 0 && r.Sign() == 0 && s.Sign() == 0 { // pre-bedrock relayed tx does not have a signature
 			result.ChainID = (*hexutil.Big)(new(big.Int).Set(config.ChainID))
@@ -1930,6 +1956,10 @@ func marshalReceipt(receipt *types.Receipt, blockHash common.Hash, blockNumber u
 		if receipt.DepositReceiptVersion != nil {
 			fields["depositReceiptVersion"] = hexutil.Uint64(*receipt.DepositReceiptVersion)
 		}
+	}
+
+	if chainConfig.Optimism != nil && tx.IsElderInnerTx() {
+		fields["elderOuterTx"] = hexutil.Bytes(receipt.ElderOuterTx)
 	}
 
 	// Assign receipt status or post state.

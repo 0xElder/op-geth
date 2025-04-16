@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	elderutils "github.com/0xElder/elder/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -62,6 +63,14 @@ type Config struct {
 
 	RollupComputePendingBlock bool   // Compute the pending block from tx-pool, instead of copying the latest-block
 	EffectiveGasCeil          uint64 // if non-zero, a gas ceiling to apply independent of the header's gaslimit value
+
+	ElderSequencerEnabled bool                           `json:"elder_sequencer_enabled"`
+	ElderGrpcClient       types.IElderClient             `json:"elder_grpc_client_conn"`
+	ElderChainID          string                         `json:"elder_chain_id"`
+	ElderRollID           uint64                         `json:"elder_roll_id"`
+	ElderRollStartBlock   uint64                         `json:"elder_roll_start_block"`
+	ElderExecutorPk       elderutils.Secp256k1PrivateKey `json:"elder_executor_pk"`
+	ElderRollAppEnabled   bool                           `json:"elder_roll_app_enabled"`
 }
 
 // DefaultConfig contains default settings for miner.
@@ -73,8 +82,9 @@ var DefaultConfig = Config{
 	// consensus-layer usually will wait a half slot of time(6s)
 	// for payload generation. It should be enough for Geth to
 	// run 3 rounds.
-	Recommit:          2 * time.Second,
-	NewPayloadTimeout: 2 * time.Second,
+	Recommit:              2 * time.Second,
+	NewPayloadTimeout:     2 * time.Second,
+	ElderSequencerEnabled: false,
 }
 
 // Miner creates blocks and searches for proof-of-work values.

@@ -34,6 +34,8 @@ import (
 	"strings"
 	"time"
 
+	elderutils "github.com/0xElder/elder/utils"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -41,6 +43,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -75,6 +78,8 @@ import (
 	pcsclite "github.com/gballet/go-libpcsclite"
 	gopsutil "github.com/shirou/gopsutil/mem"
 	"github.com/urfave/cli/v2"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // These are all the command line flags we support.
@@ -503,6 +508,41 @@ var (
 		Usage:    "Specify the maximum time allowance for creating a new payload",
 		Value:    ethconfig.Defaults.Miner.NewPayloadTimeout,
 		Category: flags.MinerCategory,
+	}
+
+	// Elder Flags
+	ElderSequencerEnabledFlag = &cli.BoolFlag{
+		Name:     "elder-seq",
+		Usage:    "Flag to enable the Elder sequencer",
+		Value:    ethconfig.Defaults.Miner.ElderSequencerEnabled,
+		Category: flags.MiscCategory,
+	}
+	ElderSeqURLFlag = &cli.StringFlag{
+		Name:     "elder-seq-url",
+		Usage:    "URL of the Elder sequencer",
+		Category: flags.MiscCategory,
+	}
+	ElderChainIDFlag = &cli.StringFlag{
+		Name:     "elder-chain-id",
+		Usage:    "Chain ID of the Elder sequencer",
+		Category: flags.MiscCategory,
+	}
+	ElderRollIDFlag = &cli.Uint64Flag{
+		Name:     "elder-roll-id",
+		Usage:    "ID of the Elder sequencer",
+		Category: flags.MiscCategory,
+	}
+	ElderRollStartBlockFlag = &cli.Uint64Flag{
+		Name:     "elder-roll-start-block",
+		Usage:    "Block number at which the elder starts sequencing rollapp transactions, optional if elder sequencing is disabled or rollapp is already enabled",
+		Value:    0,
+		Category: flags.MiscCategory,
+	}
+	ElderExecutorPkFlag = &cli.StringFlag{
+		Name:     "elder-executor",
+		Usage:    "Flag to pass private key of rollapp executor, optional if elder sequencing is disabled or rollapp is already enabled",
+		Value:    "",
+		Category: flags.MiscCategory,
 	}
 
 	// Account settings
@@ -1635,6 +1675,99 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.IsSet(RollupComputePendingBlock.Name) {
 		cfg.RollupComputePendingBlock = ctx.Bool(RollupComputePendingBlock.Name)
 	}
+	if ctx.IsSet(ElderSequencerEnabledFlag.Name) {
+		cfg.ElderSequencerEnabled = ctx.Bool(ElderSequencerEnabledFlag.Name)
+	}
+	if ctx.IsSet(ElderRollIDFlag.Name) {
+		cfg.ElderRollID = ctx.Uint64(ElderRollIDFlag.Name)
+	}
+
+	// Validity checks for elder sequencer, if enabled
+	if cfg.ElderSequencerEnabled {
+		if !ctx.IsSet(ElderSeqURLFlag.Name) || !ctx.IsSet(ElderRollIDFlag.Name) {
+			Fatalf("Both ElderSeqURLFlag and ElderRollIDFlag must be set if elder sequencer is enabled")
+		}
+
+		elderUrl := ctx.String(ElderSeqURLFlag.Name)
+		if elderUrl == "" {
+			Fatalf("Elder sequencer cannot be empty string")
+		} else if len(elderUrl) > 7 && elderUrl[0:8] == "http://" {
+			elderUrl = elderUrl[8:]
+		} else if len(elderUrl) > 8 && elderUrl[0:9] == "https://" {
+			elderUrl = elderUrl[9:]
+		}
+		conn, err := grpc.NewClient(elderUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			Fatalf("Failed to connect to elder sequencer: %v, make sure the port mentioned is of gRPC server", err)
+		}
+
+		elderClient := types.NewElderClient(conn)
+		cfg.ElderGrpcClient = elderClient
+
+		roll, err := cfg.ElderGrpcClient.QueryElderRollApp(cfg.ElderRollID)
+		if err != nil {
+			Fatalf("Failed to query elder roll app: %v", err)
+		}
+
+		cfg.ElderRollAppEnabled = roll.Enabled
+
+		// If roll is not enabled, then the elder roll start block and executor pk must be set
+		if !roll.Enabled && (!ctx.IsSet(ElderRollStartBlockFlag.Name) || !ctx.IsSet(ElderExecutorPkFlag.Name)) {
+			Fatalf("Roll app is not enabled, but start block or executor pk is not set")
+		}
+
+		cfg.ElderChainID = cfg.ElderGrpcClient.QueryElderChainID()
+
+		if ctx.IsSet(ElderChainIDFlag.Name) && cfg.ElderChainID != ctx.String(ElderChainIDFlag.Name) {
+			Fatalf("Roll app chain id mismatch: %s != %s", cfg.ElderChainID, ctx.String(ElderChainIDFlag.Name))
+		}
+
+		// If roll is enabled and elder roll start block is not set, then set it
+		if ctx.IsSet(ElderRollStartBlockFlag.Name) {
+			cfg.ElderRollStartBlock = ctx.Uint64(ElderRollStartBlockFlag.Name)
+		} else {
+			cfg.ElderRollStartBlock = roll.RollStartBlock
+		}
+
+		if ctx.IsSet(ElderExecutorPkFlag.Name) {
+			executorKey := ctx.String(ElderExecutorPkFlag.Name)
+			if executorKey[0:2] == "0x" {
+				executorKey = executorKey[2:]
+			}
+
+			executorKeyBytes, err := hex.DecodeString(executorKey)
+			if err != nil {
+				Fatalf("Failed to decode private key: %v\n", err)
+			}
+
+			// Load the SECP256K1 private key from the decoded bytes
+			pk, _ := btcec.PrivKeyFromBytes(executorKeyBytes)
+			privateKey := elderutils.Secp256k1PrivateKey{
+				Key: pk.Serialize(),
+			}
+			cfg.ElderExecutorPk = privateKey
+		}
+
+		// If roll is not enabled, then the elder registered executor for roll and executor pk must match
+		if !roll.Enabled && elderutils.CosmosPublicKeyToBech32Address("elder", cfg.ElderExecutorPk.PubKey()) != roll.Executor {
+			Fatalf("Executor pk does not match the roll app executor")
+		}
+
+		// If roll is enabled, then check if the elder roll start block matches
+		if roll.Enabled && roll.RollStartBlock != cfg.ElderRollStartBlock {
+			Fatalf("Elder roll start block mismatch: %d != %d", roll.RollStartBlock, cfg.ElderRollStartBlock)
+		}
+
+		elderExecutorBalance, err := cfg.ElderGrpcClient.QueryElderAccountBalance(&cfg.ElderExecutorPk)
+		if elderExecutorBalance == nil || err != nil {
+			Fatalf("Failed to query elder executor balance: %v", err)
+		}
+
+		if elderExecutorBalance.Cmp(big.NewInt(10*10e6)) < 0 {
+			Fatalf("Elder executor balance is less than 10, ensure it has enough balance to pay for gas (minimum 10elder)")
+		}
+	}
+
 }
 
 func setRequiredBlocks(ctx *cli.Context, cfg *ethconfig.Config) {

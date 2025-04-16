@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+	"golang.org/x/crypto/sha3"
 )
 
 var (
@@ -213,6 +214,8 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		inner = new(BlobTx)
 	case DepositTxType:
 		inner = new(DepositTx)
+	case ElderInnerTxType:
+		inner = new(ElderInnerTx)
 	default:
 		return nil, ErrTxTypeNotSupported
 	}
@@ -354,6 +357,55 @@ func (tx *Transaction) IsDepositTx() bool {
 	return tx.Type() == DepositTxType
 }
 
+// IsElderInnerTx returns true if the transaction is a elder tx type.
+func (tx *Transaction) IsElderInnerTx() bool {
+	return tx.Type() == ElderInnerTxType
+}
+
+// ElderPublicKey returns the public key associated with the elder transaction.
+func (tx *Transaction) ElderPublicKey() string {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderPublicKey
+	}
+	return ""
+}
+
+func (tx *Transaction) ElderAccountSequence() uint64 {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderAccountSequence
+	}
+	return 0
+}
+
+func (tx *Transaction) ElderOuterTx() []byte {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderOuterTx
+	}
+	return []byte{}
+}
+
+// IsElderDoubleSignedInnerTx returns true if the elder tx (cosmos tx) contains a signed eth tx
+func (tx *Transaction) IsElderDoubleSignedInnerTx() bool {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderDoubleSigned
+	}
+
+	return false
+}
+
+func (tx *Transaction) ElderStatus() bool {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		return txData.ElderStatus
+	}
+	return false
+}
+
+func (tx *Transaction) SetElderStatus(status bool) {
+	if txData, ok := tx.inner.(*ElderInnerTx); ok {
+		txData.ElderStatus = status
+	}
+}
+
 // IsSystemTx returns true for deposits that are system transactions. These transactions
 // are executed in an unmetered environment & do not contribute to the block gas limit.
 func (tx *Transaction) IsSystemTx() bool {
@@ -372,7 +424,7 @@ func (tx *Transaction) Cost() *big.Int {
 
 // RollupCostData caches the information needed to efficiently compute the data availability fee
 func (tx *Transaction) RollupCostData() RollupCostData {
-	if tx.Type() == DepositTxType {
+	if tx.Type() == DepositTxType || tx.Type() == ElderInnerTxType {
 		return RollupCostData{}
 	}
 	if v := tx.rollupCostData.Load(); v != nil {
@@ -418,7 +470,7 @@ func (tx *Transaction) GasTipCapIntCmp(other *big.Int) int {
 // Note: if the effective gasTipCap is negative, this method returns both error
 // the actual negative value, _and_ ErrGasFeeCapTooLow
 func (tx *Transaction) EffectiveGasTip(baseFee *big.Int) (*big.Int, error) {
-	if tx.Type() == DepositTxType {
+	if tx.Type() == DepositTxType || tx.Type() == ElderInnerTxType {
 		return new(big.Int), nil
 	}
 	if baseFee == nil {
@@ -542,6 +594,48 @@ func (tx *Transaction) Time() time.Time {
 	return tx.time
 }
 
+type ElderInnerTxHashNonDST struct {
+	ChainID    *big.Int
+	Nonce      uint64
+	Gas        uint64
+	To         *common.Address `rlp:"nil"` // nil means contract creation
+	Value      *big.Int
+	Data       []byte
+	AccessList AccessList
+
+	ElderPublicKey       string
+	ElderAccountSequence uint64
+}
+
+func CalculateElderNonDSTtxHash(tx *Transaction) common.Hash {
+	txData := ElderInnerTxHashNonDST{
+		ChainID:    tx.ChainId(),
+		Nonce:      tx.Nonce(),
+		Gas:        tx.Gas(),
+		To:         tx.To(),
+		Value:      tx.Value(),
+		Data:       tx.Data(),
+		AccessList: tx.AccessList(),
+
+		ElderPublicKey:       tx.ElderPublicKey(),
+		ElderAccountSequence: tx.ElderAccountSequence(),
+	}
+
+	// RLP encode the selected fields
+	encodedTx, err := rlp.EncodeToBytes(txData)
+	if err != nil {
+		return common.Hash{}
+	}
+
+	// Hash the encoded data
+	hasher := sha3.NewLegacyKeccak256()
+	hasher.Write(encodedTx)
+	var hash common.Hash
+	hasher.Sum(hash[:0])
+
+	return hash
+}
+
 // Hash returns the transaction hash.
 func (tx *Transaction) Hash() common.Hash {
 	if hash := tx.hash.Load(); hash != nil {
@@ -551,6 +645,20 @@ func (tx *Transaction) Hash() common.Hash {
 	var h common.Hash
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
+	} else if tx.Type() == ElderInnerTxType {
+		if !tx.IsElderDoubleSignedInnerTx() {
+			h = CalculateElderNonDSTtxHash(tx)
+		} else {
+			if !tx.ElderStatus() {
+				h = prefixedRlpHash(tx.Type(), tx.inner)
+			} else {
+				origTx, _, _, err := ElderTxToEthTx(tx.ElderOuterTx())
+				if err != nil {
+					log.Crit("failed to decode elder outer tx", "err", err)
+				}
+				h = origTx.Hash()
+			}
+		}
 	} else {
 		h = prefixedRlpHash(tx.Type(), tx.inner)
 	}
